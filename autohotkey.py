@@ -91,6 +91,12 @@ class Script:
     OnMessage(''' + str(F) + ''', Func("_Py_F"))
     
     FileAppend, %A_ScriptHwnd%`n, *
+    
+    Func("AutoExec").Call() ; call if exists
+    ; notify Python we're finished
+    FileAppend, Initialized`n, *
+    
+    return
     '''
 
     def __init__(self, script: str = "") -> None:
@@ -109,6 +115,7 @@ class Script:
         self.ahk.stdin.close()
 
         self.hwnd = int(self._line(), 16)
+        assert self._line() == "Initialized"
 
     @staticmethod
     def from_file(path: str, format_dict: Mapping[str, str] = None) -> 'Script':
