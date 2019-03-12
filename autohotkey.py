@@ -21,6 +21,7 @@ class Script:
     GET: ClassVar = 0x8001
     SET: ClassVar = 0x8002
     F: ClassVar = 0x8003
+    F_MAIN: ClassVar = 0x8004
 
     CORE: ClassVar = '''
     #NoEnv
@@ -34,6 +35,18 @@ class Script:
         strAddr := NumGet(lParam + 2*A_PtrSize)
         val := StrGet(strAddr, "utf-8")
         _pyData.InsertAt(1, val)
+    }
+    
+    ; call on main thread, much slower but may be necessary for DllCall() to avoid:
+    ;   Error 0x8001010d An outgoing call cannot be made since the application is dispatching an input-synchronous call.
+    _Py_F_Main(wParam, lParam, msg, hwnd) {
+        global _pyData
+        a := _pyData
+        a.Push(hwnd)
+        a.Push(msg)
+        a.Push(lParam)
+        a.Push(wParam)
+        SetTimer, _Py_F_Main, -1
     }
     
     _Py_F(wParam, lParam, msg, hwnd) {
@@ -89,6 +102,7 @@ class Script:
     OnMessage(''' + str(GET) + ''', Func("_Py_Get"))
     OnMessage(''' + str(SET) + ''', Func("_Py_Set"))
     OnMessage(''' + str(F) + ''', Func("_Py_F"))
+    OnMessage(''' + str(F_MAIN) + ''', Func("_Py_F_Main"))
     
     FileAppend, %A_ScriptHwnd%`n, *
     
@@ -96,6 +110,11 @@ class Script:
     ; notify Python we're finished
     FileAppend, Initialized`n, *
     
+    return
+    
+    _Py_F_Main:
+        _Py_F(_pyData.Pop(), _pyData.Pop(), _pyData.Pop(), _pyData.Pop())
+        FileAppend, F_Main`n, *
     return
     '''
 
@@ -152,6 +171,18 @@ class Script:
     def f(self, name: str, *args: Primitive) -> Primitive:
         self._f(Script.F, name, *args)
         return Script._from_ahk_str(self._line())
+
+    # call from main AHK thread
+    def call_main(self, name: str, *args: Primitive) -> None:
+        self._f(Script.F_MAIN, name, *args)
+        self._line()
+        assert self._line() == "F_Main"
+
+    def f_main(self, name: str, *args: Primitive) -> Primitive:
+        self._f(Script.F_MAIN, name, *args)
+        result = Script._from_ahk_str(self._line())
+        assert self._line() == "F_Main"
+        return result
 
     @staticmethod
     def _from_ahk_str(str_: str) -> Primitive:

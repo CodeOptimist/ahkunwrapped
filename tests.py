@@ -9,11 +9,13 @@ from autohotkey import Script
 
 ahk = Script.from_file('tests.ahk')
 echo = partial(ahk.f, 'Echo')
+echo_main = partial(ahk.f_main, 'Echo')
 
 
 @mark.skip
-def test_smile():
-    assert ahk.f('GetSmile') == '🙂'
+@given(st.sampled_from([ahk.f, ahk.f_main]))
+def test_smile(func):
+    assert func('GetSmile') == '🙂'
 
 
 @mark.skip
@@ -26,7 +28,7 @@ def set_get(val):
     return ahk.get('myVar')
 
 
-type_funcs = st.sampled_from([echo, set_get])
+type_funcs = st.sampled_from([echo, echo_main, set_get])
 
 
 @mark.skip
