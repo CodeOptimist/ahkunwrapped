@@ -54,6 +54,6 @@ newlines = [''.join(x) for x in itertools.product('a\n\r', repeat=3)]
 @given(type_funcs, st.one_of(st.from_type(str), st.sampled_from(newlines)))
 def test_str(func, str_):
     assume('\0' not in str_)
-    assume('\n' not in str_)
+    assume('\3' not in str_)
     assume('\r' not in str_)
     assert func(str_) == ahk._from_ahk_str(str_)

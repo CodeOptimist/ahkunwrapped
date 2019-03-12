@@ -80,14 +80,14 @@ class Script:
         else if (len = 10)
             result := %f%(a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop())
         
-        FileAppend, %result%`n, *
+        FileAppend, % result Chr(3) "`n", *
     }
     
     _Py_Get(wParam, lParam, msg, hwnd) {
         local name, val
         name := _pyData.Pop()
         val := %name%
-        FileAppend, %val%`n, *
+        FileAppend, % val Chr(3) "`n", *
     }
     
     _Py_Set(wParam, lParam, msg, hwnd) {
@@ -104,17 +104,17 @@ class Script:
     OnMessage(''' + str(F) + ''', Func("_Py_F"))
     OnMessage(''' + str(F_MAIN) + ''', Func("_Py_F_Main"))
     
-    FileAppend, %A_ScriptHwnd%`n, *
+    FileAppend, % A_ScriptHwnd Chr(3) "`n", *
     
     Func("AutoExec").Call() ; call if exists
     ; notify Python we're finished
-    FileAppend, Initialized`n, *
+    FileAppend, % "Initialized" Chr(3) "`n", *
     
     return
     
     _Py_F_Main:
         _Py_F(_pyData.Pop(), _pyData.Pop(), _pyData.Pop(), _pyData.Pop())
-        FileAppend, F_Main`n, *
+        FileAppend, % "F_Main" Chr(3) "`n", *
     return
     '''
 
@@ -133,8 +133,8 @@ class Script:
         self.ahk.stdin.write(self.script)
         self.ahk.stdin.close()
 
-        self.hwnd = int(self._line(), 16)
-        assert self._line() == "Initialized"
+        self.hwnd = int(self._read_text(), 16)
+        assert self._read_text() == "Initialized"
 
     @staticmethod
     def from_file(path: str, format_dict: Mapping[str, str] = None) -> 'Script':
@@ -145,8 +145,12 @@ class Script:
             script = script.format(**format_dict)
         return Script(script)
 
-    def _line(self) -> str:
-        return self.ahk.stdout.readline()[:-1]
+    def _read_text(self) -> str:
+        end = '\3\n'
+        result = ""
+        while result == "" or not result.endswith(end):
+            result += self.ahk.stdout.readline()
+        return result[:-len(end)]
 
     def _send(self, val: Primitive) -> None:
         char_buffer = array.array('b', bytes(Script._to_ahk_str(val), 'utf-8'))
@@ -166,22 +170,22 @@ class Script:
 
     def call(self, name: str, *args: Primitive) -> None:
         self._f(Script.F, name, *args)
-        self._line()
+        self._read_text()
 
     def f(self, name: str, *args: Primitive) -> Primitive:
         self._f(Script.F, name, *args)
-        return Script._from_ahk_str(self._line())
+        return Script._from_ahk_str(self._read_text())
 
     # call from main AHK thread
     def call_main(self, name: str, *args: Primitive) -> None:
         self._f(Script.F_MAIN, name, *args)
-        self._line()
-        assert self._line() == "F_Main"
+        self._read_text()
+        assert self._read_text() == "F_Main"
 
     def f_main(self, name: str, *args: Primitive) -> Primitive:
         self._f(Script.F_MAIN, name, *args)
-        result = Script._from_ahk_str(self._line())
-        assert self._line() == "F_Main"
+        result = Script._from_ahk_str(self._read_text())
+        assert self._read_text() == "F_Main"
         return result
 
     @staticmethod
@@ -195,7 +199,7 @@ class Script:
     def get(self, name: str) -> Primitive:
         self._send(name)
         win32api.SendMessage(self.hwnd, Script.GET, 0, 0)
-        return Script._from_ahk_str(self._line())
+        return Script._from_ahk_str(self._read_text())
 
     def set(self, name: str, val: Primitive) -> None:
         self._send(name)
