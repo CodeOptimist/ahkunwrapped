@@ -7,15 +7,7 @@ from pytest import mark
 
 from autohotkey import Script
 
-ahk = Script('''
-Echo(val) {
-    return % val
-}
-
-GetSmile() {
-    return "🙂"
-}
-''')
+ahk = Script.from_file('tests.ahk')
 echo = partial(ahk.f, 'Echo')
 
 

@@ -6,11 +6,14 @@ import struct
 import subprocess
 import sys
 from typing import ClassVar
+from typing import Mapping
 from typing import TypeVar
 
 import win32api
 import win32con
 
+# noinspection PyProtectedMember
+DIR_PATH = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
 Primitive = TypeVar("Primitive", bool, float, int, str)
 
 
@@ -24,7 +27,7 @@ class Script:
     #NoTrayIcon
     #Persistent
     FileEncoding, utf-8-raw
-    SetWorkingDir, % A_ScriptDir
+    SetWorkingDir, ''' + DIR_PATH + '''
     
     _Py_CopyData(wParam, lParam, msg, hwnd) {
         global _pyData
@@ -94,9 +97,7 @@ class Script:
         self.script = Script.CORE
         self.script += script
 
-        # noinspection PyProtectedMember
-        dir_path = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
-        ahk_path = os.path.join(dir_path, r'lib\AutoHotkey\AutoHotkey.exe')
+        ahk_path = os.path.join(DIR_PATH, r'lib\AutoHotkey\AutoHotkey.exe')
         assert os.path.exists(ahk_path)
 
         self.cmd = [ahk_path, "*"]
@@ -108,6 +109,15 @@ class Script:
         self.ahk.stdin.close()
 
         self.hwnd = int(self._line(), 16)
+
+    @staticmethod
+    def from_file(path: str, format_dict: Mapping[str, str] = None) -> 'Script':
+        with open(os.path.join(DIR_PATH, path)) as f:
+            script = f.read()
+        if format_dict is not None:
+            script = script.replace(r'{', r'{{').replace(r'}', r'}}').replace(r'{{{', r'').replace(r'}}}', r'')
+            script = script.format(**format_dict)
+        return Script(script)
 
     def _line(self) -> str:
         return self.ahk.stdout.readline()[:-1]
