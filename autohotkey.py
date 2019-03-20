@@ -5,6 +5,7 @@ import os
 import struct
 import subprocess
 import sys
+import time
 from typing import ClassVar
 from typing import Mapping
 from typing import TypeVar
@@ -15,6 +16,9 @@ import win32con
 # noinspection PyProtectedMember
 DIR_PATH = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
 Primitive = TypeVar("Primitive", bool, float, int, str)
+
+
+class AhkExitException(Exception): pass
 
 
 class Script:
@@ -35,6 +39,7 @@ class Script:
         strAddr := NumGet(lParam + 2*A_PtrSize)
         val := StrGet(strAddr, "utf-8")
         _pyData.InsertAt(1, val)
+        return 1
     }
     
     ; call on main thread, much slower but may be necessary for DllCall() to avoid:
@@ -47,6 +52,7 @@ class Script:
         a.Push(lParam)
         a.Push(wParam)
         SetTimer, _Py_F_Main, -1
+        return 1
     }
     
     _Py_F(wParam, lParam, msg, hwnd) {
@@ -81,6 +87,7 @@ class Script:
             result := %f%(a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop())
         
         FileAppend, % result Chr(3) "`n", *
+        return 1
     }
     
     _Py_Get(wParam, lParam, msg, hwnd) {
@@ -88,12 +95,14 @@ class Script:
         name := _pyData.Pop()
         val := %name%
         FileAppend, % val Chr(3) "`n", *
+        return 1
     }
     
     _Py_Set(wParam, lParam, msg, hwnd) {
         local name
         name := _pyData.Pop()
         %name% := _pyData.Pop()
+        return 1
     }
     
     _pyData := []
@@ -105,9 +114,7 @@ class Script:
     OnMessage(''' + str(F_MAIN) + ''', Func("_Py_F_Main"))
     
     FileAppend, % A_ScriptHwnd Chr(3) "`n", *
-    
     Func("AutoExec").Call() ; call if exists
-    ; notify Python we're finished
     FileAppend, % "Initialized" Chr(3) "`n", *
     
     return
@@ -119,6 +126,8 @@ class Script:
     '''
 
     def __init__(self, script: str = "") -> None:
+        self.pid = os.getpid()
+
         self.script = Script.CORE
         self.script += script
 
@@ -152,11 +161,19 @@ class Script:
             result += self.ahk.stdout.readline()
         return result[:-len(end)]
 
+    def _send_message(self, msg: int, lparam: bytes = None) -> None:
+        # this is essential because messages are ignored if uninterruptible (e.g. in menu)
+        # wparam is normally source window handle, but we don't have a window
+        while not win32api.SendMessage(self.hwnd, msg, self.pid, lparam):
+            if self.ahk.poll() is not None:
+                raise AhkExitException()
+            time.sleep(0.01)
+
     def _send(self, val: Primitive) -> None:
         char_buffer = array.array('b', bytes(Script._to_ahk_str(val), 'utf-8'))
         addr, size = char_buffer.buffer_info()
         struct_ = struct.pack('PLP', 12345, size, addr)
-        win32api.SendMessage(self.hwnd, win32con.WM_COPYDATA, None, struct_)
+        self._send_message(win32con.WM_COPYDATA, struct_)
 
     @staticmethod
     def _to_ahk_str(val: Primitive) -> str:
@@ -166,7 +183,7 @@ class Script:
         self._send(name)
         for arg in args:
             self._send(arg)
-        win32api.SendMessage(self.hwnd, msg, 0, 0)
+        self._send_message(msg)
 
     def call(self, name: str, *args: Primitive) -> None:
         self._f(Script.F, name, *args)
@@ -198,13 +215,13 @@ class Script:
 
     def get(self, name: str) -> Primitive:
         self._send(name)
-        win32api.SendMessage(self.hwnd, Script.GET, 0, 0)
+        self._send_message(Script.GET)
         return Script._from_ahk_str(self._read_text())
 
     def set(self, name: str, val: Primitive) -> None:
         self._send(name)
         self._send(val)
-        win32api.SendMessage(self.hwnd, Script.SET, 0, 0)
+        self._send_message(Script.SET)
 
     def close(self) -> None:
         self.ahk.stdout.close()
