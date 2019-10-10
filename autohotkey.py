@@ -125,13 +125,16 @@ class Script:
     return
     '''
 
-    def __init__(self, script: str = "") -> None:
+    def __init__(self, script: str = "", ahk_path: str = None) -> None:
         self.pid = os.getpid()
 
         self.script = Script.CORE
         self.script += script
 
-        ahk_path = os.path.join(DIR_PATH, r'lib\AutoHotkey\AutoHotkey.exe')
+        if ahk_path is None:
+            lib_path = os.path.join(DIR_PATH, r'lib\AutoHotkey\AutoHotkey.exe')
+            prog_path = os.path.join(os.environ.get('ProgramW6432', os.environ['ProgramFiles']), r'AutoHotkey\AutoHotkey.exe')
+            ahk_path = lib_path if os.path.exists(lib_path) else prog_path if os.path.exists(prog_path) else None
         assert os.path.exists(ahk_path)
 
         self.cmd = [ahk_path, "*"]
@@ -146,13 +149,13 @@ class Script:
         assert self._read_text() == "Initialized"
 
     @staticmethod
-    def from_file(path: str, format_dict: Mapping[str, str] = None) -> 'Script':
+    def from_file(path: str, format_dict: Mapping[str, str] = None, ahk_path: str = None) -> 'Script':
         with open(os.path.join(DIR_PATH, path)) as f:
             script = f.read()
         if format_dict is not None:
             script = script.replace(r'{', r'{{').replace(r'}', r'}}').replace(r'{{{', r'').replace(r'}}}', r'')
             script = script.format(**format_dict)
-        return Script(script)
+        return Script(script, ahk_path)
 
     def _read_text(self) -> str:
         end = '\3\n'
