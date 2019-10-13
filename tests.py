@@ -12,7 +12,6 @@ echo = partial(ahk.f, 'Echo')
 echo_main = partial(ahk.f_main, 'Echo')
 
 
-@mark.skip
 @given(st.sampled_from([ahk.f, ahk.f_main]))
 def test_smile(func):
     assert func('GetSmile') == '🙂'

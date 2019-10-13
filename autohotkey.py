@@ -137,7 +137,7 @@ class Script:
             ahk_path = lib_path if os.path.exists(lib_path) else prog_path if os.path.exists(prog_path) else None
         assert os.path.exists(ahk_path)
 
-        self.cmd = [ahk_path, "*"]
+        self.cmd = [ahk_path, "/CP65001", "*"]
         # must pipe all three within a PyInstaller bundled exe
         # text=True is a better alias for universal_newlines=True but requires newer Python
         self.ahk = subprocess.Popen(self.cmd, executable=ahk_path, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', universal_newlines=True)
@@ -150,7 +150,7 @@ class Script:
 
     @staticmethod
     def from_file(path: str, format_dict: Mapping[str, str] = None, ahk_path: str = None) -> 'Script':
-        with open(os.path.join(DIR_PATH, path)) as f:
+        with open(os.path.join(DIR_PATH, path), encoding='utf-8') as f:
             script = f.read()
         if format_dict is not None:
             script = script.replace(r'{', r'{{').replace(r'}', r'}}').replace(r'{{{', r'').replace(r'}}}', r'')
