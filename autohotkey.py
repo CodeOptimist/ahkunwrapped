@@ -6,6 +6,7 @@ import struct
 import subprocess
 import sys
 import time
+from subprocess import TimeoutExpired
 from typing import ClassVar
 from typing import Mapping
 from typing import TypeVar
@@ -105,6 +106,10 @@ class Script:
         return 1
     }
     
+    _Py_ExitApp() {
+        ExitApp
+    }
+    
     _pyData := []
     
     OnMessage(''' + str(win32con.WM_COPYDATA) + ''', Func("_Py_CopyData"))
@@ -141,7 +146,7 @@ class Script:
         # must pipe all three within a PyInstaller bundled exe
         # text=True is a better alias for universal_newlines=True but requires newer Python
         self.ahk = subprocess.Popen(self.cmd, executable=ahk_path, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', universal_newlines=True)
-        atexit.register(self.ahk.terminate)
+        atexit.register(self.exit)
         self.ahk.stdin.write(self.script)
         self.ahk.stdin.close()
 
@@ -226,8 +231,13 @@ class Script:
         self._send(val)
         self._send_message(Script.SET)
 
-    def close(self) -> None:
-        self.ahk.stdout.close()
-        return_code = self.ahk.wait()
-        if return_code:
-            raise subprocess.CalledProcessError(return_code, self.cmd)
+    def exit(self, timeout=5.0) -> None:
+        try:
+            self.call("_Py_ExitApp")  # clean, removes tray icons etc.
+            return_code = self.ahk.wait(timeout)
+            if return_code:
+                raise subprocess.CalledProcessError(return_code, self.cmd)
+        except AhkExitException:
+            pass
+        except TimeoutExpired:
+            self.ahk.terminate()
