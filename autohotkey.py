@@ -2,6 +2,7 @@
 import array
 import atexit
 import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -130,7 +131,7 @@ class Script:
     return
     '''
 
-    def __init__(self, script: str = "", ahk_path: str = None) -> None:
+    def __init__(self, script: str = "", ahk_path: str = None, execute_from: str = None) -> None:
         self.pid = os.getpid()
 
         self.script = Script.CORE
@@ -141,6 +142,21 @@ class Script:
             prog_path = os.path.join(os.environ.get('ProgramW6432', os.environ['ProgramFiles']), r'AutoHotkey\AutoHotkey.exe')
             ahk_path = lib_path if os.path.exists(lib_path) else prog_path if os.path.exists(prog_path) else None
         assert os.path.exists(ahk_path)
+
+        # Windows notification area relies on consistent exe path
+        if execute_from is not None:
+            assert os.path.isdir(execute_from)
+            ahk_into_folder = os.path.join(execute_from, os.path.basename(ahk_path))
+            try:
+                os.link(ahk_path, ahk_into_folder)
+            except FileExistsError:
+                pass
+            except OSError as ex:
+                # 5: "Access is denied"
+                # 17: "The system cannot move the file to a different disk drive"
+                if ex.winerror in (5, 17):
+                    shutil.copyfile(ahk_path, ahk_into_folder)
+            ahk_path = ahk_into_folder
 
         self.cmd = [ahk_path, "/CP65001", "*"]
         # must pipe all three within a PyInstaller bundled exe
@@ -154,13 +170,13 @@ class Script:
         assert self._read_text() == "Initialized"
 
     @staticmethod
-    def from_file(path: str, format_dict: Mapping[str, str] = None, ahk_path: str = None) -> 'Script':
+    def from_file(path: str, format_dict: Mapping[str, str] = None, ahk_path: str = None, execute_from: str = None) -> 'Script':
         with open(os.path.join(DIR_PATH, path), encoding='utf-8') as f:
             script = f.read()
         if format_dict is not None:
             script = script.replace(r'{', r'{{').replace(r'}', r'}}').replace(r'{{{', r'').replace(r'}}}', r'')
             script = script.format(**format_dict)
-        return Script(script, ahk_path)
+        return Script(script, ahk_path, execute_from)
 
     def _read_text(self) -> str:
         end = '\3\n'
