@@ -29,6 +29,7 @@ class Script:
     SET: ClassVar = 0x8002
     F: ClassVar = 0x8003
     F_MAIN: ClassVar = 0x8004
+    END: ClassVar = '\3'
 
     CORE: ClassVar = '''
     #NoEnv
@@ -36,6 +37,8 @@ class Script:
     #Persistent
     FileEncoding, utf-8-raw
     SetWorkingDir, ''' + DIR_PATH + '''
+    ; _PY_END assignment is prepended to core below
+    _PY_END .= "`n"
     
     _Py_CopyData(wParam, lParam, msg, hwnd) {
         global _pyData
@@ -70,7 +73,7 @@ class Script:
     }
     
     _Py_F(wParam, lParam, msg, hwnd) {
-        global _pyData
+        global _pyData, _PY_END
         a := _pyData
         
         name := a.Pop()
@@ -100,7 +103,7 @@ class Script:
         else if (len = 10)
             result := %f%(a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop())
         
-        FileAppend, % result Chr(3) "`n", *
+        FileAppend, % result _PY_END, *
         return 1
     }
     
@@ -108,7 +111,7 @@ class Script:
         local name, val
         name := _pyData.Pop()
         val := %name%
-        FileAppend, % val Chr(3) "`n", *
+        FileAppend, % val _PY_END, *
         return 1
     }
     
@@ -131,22 +134,23 @@ class Script:
     OnMessage(''' + str(F) + ''', Func("_Py_F"))
     OnMessage(''' + str(F_MAIN) + ''', Func("_Py_F_Main"))
     
-    FileAppend, % A_ScriptHwnd Chr(3) "`n", *
+    FileAppend, % A_ScriptHwnd _PY_END, *
     Func("AutoExec").Call() ; call if exists
-    FileAppend, % "Initialized" Chr(3) "`n", *
+    FileAppend, % "Initialized" _PY_END, *
     
     return
     
     _Py_F_Main:
         _Py_F(_pyData.Pop(), _pyData.Pop(), _pyData.Pop(), _pyData.Pop())
-        FileAppend, % "F_Main" Chr(3) "`n", *
+        FileAppend, % "F_Main" _PY_END, *
     return
     '''
 
     def __init__(self, script: str = "", ahk_path: str = None, execute_from: str = None) -> None:
         self.pid = os.getpid()
 
-        self.script = Script.CORE
+        self.script = f'_PY_END := Chr({ord(Script.END)})'
+        self.script += Script.CORE
         self.script += script
 
         if ahk_path is None:
@@ -191,11 +195,12 @@ class Script:
         return Script(script, ahk_path, execute_from)
 
     def _read_text(self) -> str:
-        end = '\3\n'
-        result = ""
-        while result == "" or not result.endswith(end):
-            result += self.ahk.stdout.readline()
-        return result[:-len(end)]
+        end = f"{Script.END}\n"
+        out = ""
+        while out == "" or not out.endswith(end):
+            out += self.ahk.stdout.readline()
+        out = out[:-len(end)]
+        return out
 
     def _send_message(self, msg: int, lparam: bytes = None) -> None:
         # this is essential because messages are ignored if uninterruptible (e.g. in menu)
