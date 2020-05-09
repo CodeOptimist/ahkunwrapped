@@ -12,6 +12,7 @@ from subprocess import TimeoutExpired
 from typing import ClassVar
 from typing import Mapping
 from typing import Optional
+from typing import Sequence
 from typing import TypeVar
 
 import win32api
@@ -30,7 +31,8 @@ class Script:
     SET: ClassVar = 0x8002
     F: ClassVar = 0x8003
     F_MAIN: ClassVar = 0x8004
-    END: ClassVar = '\3'
+    SEPARATOR: ClassVar = '\3'
+    END: ClassVar = SEPARATOR + SEPARATOR
 
     CORE: ClassVar = '''
     #NoEnv
@@ -38,11 +40,11 @@ class Script:
     #Persistent
     FileEncoding, utf-8-raw
     SetWorkingDir, ''' + DIR_PATH + '''
-    ; _PY_END assignment is prepended to core below
-    _PY_END .= "`n"
+    ; _PY_SEPARATOR assignment is prepended to core below
+    _PY_END := _PY_SEPARATOR _PY_SEPARATOR "`n"
     
     _Py_CopyData(wParam, lParam, msg, hwnd) {
-        global _pyData
+        global _pyData, _PY_SEPARATOR
 
         ;dataTypeId := NumGet(lParam + 0*A_PtrSize) ; unneeded atm
         dataSize := NumGet(lParam + 1*A_PtrSize)
@@ -51,12 +53,16 @@ class Script:
         data := StrGet(strAddr, dataSize, "utf-8")
         ; OutputDebug, Received: '%data%'
 
-        type := RTrim(SubStr(data, 1, 5))
-        val := SubStr(data, 7)
-        ; others are automatic
-        if (type = "bool")
-            val := val == "True" ? 1 : 0    ; same as True/False
-        _pyData.InsertAt(1, val)
+        ; limitation of Parse and StrSplit(): separator must be a single character
+        Loop, Parse, data, % _PY_SEPARATOR
+        {
+            type := RTrim(SubStr(A_LoopField, 1, 5))
+            val := SubStr(A_LoopField, 7)
+            ; others are automatic
+            if (type = "bool")
+                val := val == "True" ? 1 : 0    ; same as True/False
+            _pyData.InsertAt(1, val)
+        }
         return 1
     }
     
@@ -150,7 +156,7 @@ class Script:
     def __init__(self, script: str = "", ahk_path: str = None, execute_from: str = None) -> None:
         self.pid = os.getpid()
 
-        self.script = f'_PY_END := Chr({ord(Script.END)})'
+        self.script = f"_PY_SEPARATOR := Chr({ord(Script.SEPARATOR)})"
         self.script += Script.CORE
         self.script += script
 
@@ -196,11 +202,10 @@ class Script:
         return Script(script, ahk_path, execute_from)
 
     def _read_text(self) -> str:
-        end = f"{Script.END}\n"
         out = ""
-        while out == "" or not out.endswith(end):
+        while out == "" or not out.endswith(f"{Script.END}\n"):
             out += self.ahk.stdout.readline()
-        out = out[:-len(end)]
+        out = out[:-3]
         return out
 
     def _send_message(self, msg: int, lparam: bytes = None) -> None:
@@ -211,11 +216,15 @@ class Script:
                 raise AhkExitException()
             time.sleep(0.01)
 
-    def _send(self, val: Primitive) -> None:
-        char_buffer = array.array('b', bytes(Script._to_ahk_str(val), 'utf-8'))
+    def _send(self, msg: int, data: Sequence[Primitive]) -> None:
+        data_str = Script.SEPARATOR.join(Script._to_ahk_str(v) for v in data)
+        # OutputDebugString(f"Sent: {data}")
+        char_buffer = array.array('b', bytes(data_str, 'utf-8'))
         addr, size = char_buffer.buffer_info()
-        struct_ = struct.pack('PLP', 12345, size, addr)
+        data_type_id = msg  # anything; unneeded atm
+        struct_ = struct.pack('PLP', data_type_id, size, addr)
         self._send_message(win32con.WM_COPYDATA, struct_)
+        self._send_message(msg)
 
     @staticmethod
     def _to_ahk_str(val: Primitive) -> str:
@@ -223,11 +232,7 @@ class Script:
         return f"{type(val).__name__[:5]:<5} {str_}"
 
     def _f(self, msg: int, name: str, *args: Primitive, need_result: bool) -> Optional[str]:
-        self._send(name)
-        self._send(need_result)
-        for arg in args:
-            self._send(arg)
-        self._send_message(msg)
+        self._send(msg, [name, need_result] + list(args))
         return Script._from_ahk_str(self._read_text())
 
     def call(self, name: str, *args: Primitive) -> None:
@@ -260,14 +265,11 @@ class Script:
         return str_
 
     def get(self, name: str) -> Primitive:
-        self._send(name)
-        self._send_message(Script.GET)
+        self._send(Script.GET, [name])
         return Script._from_ahk_str(self._read_text())
 
     def set(self, name: str, val: Primitive) -> None:
-        self._send(name)
-        self._send(val)
-        self._send_message(Script.SET)
+        self._send(Script.SET, [name, val])
 
     def exit(self, timeout=5.0) -> None:
         try:

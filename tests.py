@@ -55,5 +55,5 @@ newlines = [''.join(x) for x in itertools.product('a\n\r', repeat=3)]
 def test_str(func, str_):
     assume('\0' not in str_)
     assume('\r' not in str_)
-    assume(Script.END not in str_)
+    assume(Script.SEPARATOR not in str_)
     assert func(str_) == ahk._from_ahk_str(str_)
