@@ -8,6 +8,7 @@ import struct
 import subprocess
 import sys
 import time
+from itertools import chain
 from subprocess import TimeoutExpired
 from typing import ClassVar
 from typing import Mapping
@@ -23,7 +24,11 @@ DIR_PATH = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os
 Primitive = TypeVar("Primitive", bool, float, int, str)
 
 
-class AhkExitException(Exception): pass
+class AhkException(Exception): pass
+class AhkExitException(AhkException): pass
+class AhkError(AhkException): pass
+class AhkFuncNotFoundError(AhkError): pass
+class AhkUnexpectedPidError(AhkError): pass
 
 
 class Script:
@@ -43,16 +48,39 @@ class Script:
     ; _PY_SEPARATOR assignment is prepended to core below
     _PY_END := _PY_SEPARATOR _PY_SEPARATOR "`n"
     
+    ; we can't peek() stdout/stderr, so write to both
+    _Py_Response(text) {
+        global _PY_END
+        FileAppend, % text _PY_END, *                       ; stdout
+        FileAppend, % "" _PY_END, **                        ; stderr
+        return 1
+    }
+    
+    _Py_Exception(name, text) {
+        global _pyData, _PY_SEPARATOR, _PY_END
+        _pyData := []
+        FileAppend, % "" _PY_END, *                         ; stdout
+        FileAppend, % name _PY_SEPARATOR text _PY_END, **   ; stderr
+        return 1
+    }
+    
+    _Py_UnexpectedPidError(wParam) {
+        global _pyPid
+        return _Py_Exception("''' + AhkUnexpectedPidError.__name__ + '''", "expected " _pyPid " received " wParam)
+    }
+    
     _Py_CopyData(wParam, lParam, msg, hwnd) {
-        global _pyData, _PY_SEPARATOR
-
+        global _pyData, _pyPid, _PY_SEPARATOR
+        if (wParam != _pyPid)
+            return _Py_UnexpectedPidError(wParam)
+        
         ;dataTypeId := NumGet(lParam + 0*A_PtrSize) ; unneeded atm
         dataSize := NumGet(lParam + 1*A_PtrSize)
         strAddr := NumGet(lParam + 2*A_PtrSize)
         ; limitation of StrGet(): data is truncated after \0
         data := StrGet(strAddr, dataSize, "utf-8")
         ; OutputDebug, Received: '%data%'
-
+        
         ; limitation of Parse and StrSplit(): separator must be a single character
         Loop, Parse, data, % _PY_SEPARATOR
         {
@@ -69,7 +97,9 @@ class Script:
     ; call on main thread, much slower but may be necessary for DllCall() to avoid:
     ;   Error 0x8001010d An outgoing call cannot be made since the application is dispatching an input-synchronous call.
     _Py_F_Main(wParam, lParam, msg, hwnd) {
-        global _pyData
+        global _pyData, _pyPid
+        if (wParam != _pyPid)
+            return _Py_UnexpectedPidError(wParam)
         a := _pyData
         a.Push(hwnd)
         a.Push(msg)
@@ -80,10 +110,15 @@ class Script:
     }
     
     _Py_F(wParam, lParam, msg, hwnd) {
-        global _pyData, _PY_END
+        global _pyData, _pyPid
+        if (wParam != _pyPid)
+            return _Py_UnexpectedPidError(wParam)
         a := _pyData
         
         name := a.Pop()
+        if (not IsFunc(name))
+            return _Py_Exception("''' + AhkFuncNotFoundError.__name__ + '''", name)
+        
         needResult := a.Pop()
         f := name
         len := a.Length()
@@ -111,20 +146,22 @@ class Script:
         else if (len = 10)
             result := %f%(a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop())
         
-        FileAppend, % (needResult ? result : "") _PY_END, *
-        return 1
+        return _Py_Response(needResult ? result : "")
     }
     
     _Py_Get(wParam, lParam, msg, hwnd) {
         local name, val
+        if (wParam != _pyPid)
+            return _Py_UnexpectedPidError(wParam)
         name := _pyData.Pop()
         val := %name%
-        FileAppend, % val _PY_END, *
-        return 1
+        return _Py_Response(val)
     }
     
     _Py_Set(wParam, lParam, msg, hwnd) {
         local name
+        if (wParam != _pyPid)
+            return _Py_UnexpectedPidError(wParam)
         name := _pyData.Pop()
         %name% := _pyData.Pop()
         return 1
@@ -135,16 +172,18 @@ class Script:
     }
     
     _pyData := []
+    _pyPid := ''' + str(os.getpid()) + '''
     
+    ; must return non-zero to signal completion
     OnMessage(''' + str(win32con.WM_COPYDATA) + ''', Func("_Py_CopyData"))
     OnMessage(''' + str(GET) + ''', Func("_Py_Get"))
     OnMessage(''' + str(SET) + ''', Func("_Py_Set"))
     OnMessage(''' + str(F) + ''', Func("_Py_F"))
     OnMessage(''' + str(F_MAIN) + ''', Func("_Py_F_Main"))
     
-    FileAppend, % A_ScriptHwnd _PY_END, *
+    _Py_Response(A_ScriptHwnd)
     Func("AutoExec").Call() ; call if exists
-    FileAppend, % "Initialized" _PY_END, *
+    _Py_Response("Initialized")
     
     return
     
@@ -189,8 +228,8 @@ class Script:
         self.ahk.stdin.write(self.script)
         self.ahk.stdin.close()
 
-        self.hwnd = int(self._read_text(), 16)
-        assert self._read_text() == "Initialized"
+        self.hwnd = int(self._read_response(), 16)
+        assert self._read_response() == "Initialized"
 
     @staticmethod
     def from_file(path: str, format_dict: Mapping[str, str] = None, ahk_path: str = None, execute_from: str = None) -> 'Script':
@@ -201,11 +240,21 @@ class Script:
             script = script.format(**format_dict)
         return Script(script, ahk_path, execute_from)
 
-    def _read_text(self) -> str:
-        out = ""
-        while out == "" or not out.endswith(f"{Script.END}\n"):
+    def _read_response(self) -> str:
+        end = f"{Script.END}\n"
+        out, err = "", ""
+        while out == "" or not out.endswith(end):
             out += self.ahk.stdout.readline()
-        out = out[:-3]
+        while err == "" or not err.endswith(end):
+            err += self.ahk.stderr.readline()
+        out, err = out[:-len(end)], err[:-len(end)]
+        # OutputDebugString(f"Out: '{out}' Err: '{err}"
+
+        if err:
+            name, text = tuple(map(str, err.split(Script.SEPARATOR)))
+            exception = next((ex for ex in chain(AhkError.__subclasses__(), AhkException.__subclasses__()) if ex.__name__ == name), None)
+            if exception:
+                raise exception(text)
         return out
 
     def _send_message(self, msg: int, lparam: bytes = None) -> None:
@@ -233,7 +282,7 @@ class Script:
 
     def _f(self, msg: int, name: str, *args: Primitive, need_result: bool) -> Optional[str]:
         self._send(msg, [name, need_result] + list(args))
-        return Script._from_ahk_str(self._read_text())
+        return Script._from_ahk_str(self._read_response())
 
     def call(self, name: str, *args: Primitive) -> None:
         self._f(Script.F, name, *args, need_result=False)
@@ -266,7 +315,7 @@ class Script:
 
     def get(self, name: str) -> Primitive:
         self._send(Script.GET, [name])
-        return Script._from_ahk_str(self._read_text())
+        return Script._from_ahk_str(self._read_response())
 
     def set(self, name: str, val: Primitive) -> None:
         self._send(Script.SET, [name, val])
@@ -281,3 +330,6 @@ class Script:
             pass
         except TimeoutExpired:
             self.ahk.terminate()
+        except Exception:
+            self.ahk.terminate()
+            raise

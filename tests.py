@@ -3,9 +3,10 @@ import math
 from functools import partial
 
 import hypothesis.strategies as st
+import pytest
 from hypothesis import assume, given
-from pytest import mark
 
+import autohotkey
 from autohotkey import Script
 
 ahk = Script.from_file('tests.ahk')
@@ -18,9 +19,10 @@ def test_smile(func):
     assert func('GetSmile') == '🙂'
 
 
-@mark.skip
+@given(st.sampled_from([ahk.call, ahk.call_main, ahk.f, ahk.f_main]))
 def test_missing_func(func):
-    func('BadFunc')
+    with pytest.raises(autohotkey.AhkFuncNotFoundError):
+        func('BadFunc')
 
 
 def set_get(val):
