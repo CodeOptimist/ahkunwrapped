@@ -40,6 +40,8 @@ class Script:
     END: ClassVar = SEPARATOR + SEPARATOR
 
     CORE: ClassVar = '''
+    _pyUserBatchLines := A_BatchLines
+    SetBatchLines, -1
     #NoEnv
     #NoTrayIcon
     #Persistent
@@ -71,6 +73,7 @@ class Script:
     
     _Py_CopyData(wParam, lParam, msg, hwnd) {
         global _pyData, _pyPid, _PY_SEPARATOR
+        SetBatchLines, -1
         if (wParam != _pyPid)
             return _Py_UnexpectedPidError(wParam)
         
@@ -98,6 +101,7 @@ class Script:
     ;   Error 0x8001010d An outgoing call cannot be made since the application is dispatching an input-synchronous call.
     _Py_F_Main(wParam, lParam, msg, hwnd) {
         global _pyData, _pyPid
+        SetBatchLines, -1
         if (wParam != _pyPid)
             return _Py_UnexpectedPidError(wParam)
         a := _pyData
@@ -110,7 +114,8 @@ class Script:
     }
     
     _Py_F(wParam, lParam, msg, hwnd) {
-        global _pyData, _pyPid
+        global _pyData, _pyPid, _pyUserBatchLines
+        SetBatchLines, -1
         if (wParam != _pyPid)
             return _Py_UnexpectedPidError(wParam)
         a := _pyData
@@ -123,6 +128,7 @@ class Script:
         f := name
         len := a.Length()
         
+        SetBatchLines, % _pyUserBatchLines
         if (len = 0)
             result := %f%()
         else if (len = 1)
@@ -145,12 +151,14 @@ class Script:
             result := %f%(a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop())
         else if (len = 10)
             result := %f%(a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop())
+        SetBatchLines, -1
         
         return _Py_Response(needResult ? result : "")
     }
     
     _Py_Get(wParam, lParam, msg, hwnd) {
         local name, val
+        SetBatchLines, -1
         if (wParam != _pyPid)
             return _Py_UnexpectedPidError(wParam)
         name := _pyData.Pop()
@@ -160,6 +168,7 @@ class Script:
     
     _Py_Set(wParam, lParam, msg, hwnd) {
         local name
+        SetBatchLines, -1
         if (wParam != _pyPid)
             return _Py_UnexpectedPidError(wParam)
         name := _pyData.Pop()
@@ -182,12 +191,16 @@ class Script:
     OnMessage(''' + str(F_MAIN) + ''', Func("_Py_F_Main"))
     
     _Py_Response(A_ScriptHwnd)
-    Func("AutoExec").Call() ; call if exists
-    _Py_Response("Initialized")
     
+    SetBatchLines, % _pyUserBatchLines
+    Func("AutoExec").Call() ; call if exists
+    _pyUserBatchLines := A_BatchLines
+    
+    _Py_Response("Initialized")
     return
     
     _Py_F_Main:
+        SetBatchLines, -1
         _Py_F(_pyData.Pop(), _pyData.Pop(), _pyData.Pop(), _pyData.Pop())
     return
     '''
