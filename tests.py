@@ -1,4 +1,5 @@
 import itertools
+import math
 from functools import partial
 
 import hypothesis.strategies as st
@@ -30,7 +31,6 @@ def set_get(val):
 type_funcs = st.sampled_from([echo, echo_main, set_get])
 
 
-@mark.skip
 @given(type_funcs, st.booleans())
 def test_bool(func, bool_):
     assert func(bool_) == bool_
@@ -41,10 +41,11 @@ def test_int(func, int_):
     assert func(int_) == int_
 
 
-@mark.skip
 @given(type_funcs, st.from_type(float))
 def test_float(func, float_):
-    assert func(float_) == float_
+    assume(not math.isnan(float_) and not math.isinf(float_))
+    ahk_float = float(f'{float_:.6f}')
+    assert func(float_) == ahk_float
 
 
 newlines = [''.join(x) for x in itertools.product('a\n\r', repeat=3)]

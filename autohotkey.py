@@ -3,6 +3,7 @@ import array
 import atexit
 import os
 import shutil
+import string
 import struct
 import subprocess
 import sys
@@ -38,8 +39,19 @@ class Script:
     
     _Py_CopyData(wParam, lParam, msg, hwnd) {
         global _pyData
+
+        ;dataTypeId := NumGet(lParam + 0*A_PtrSize) ; unneeded atm
+        dataSize := NumGet(lParam + 1*A_PtrSize)
         strAddr := NumGet(lParam + 2*A_PtrSize)
-        val := StrGet(strAddr, "utf-8")
+        ; limitation of StrGet(): data is truncated after \0
+        data := StrGet(strAddr, dataSize, "utf-8")
+        ; OutputDebug, Received: '%data%'
+
+        type := RTrim(SubStr(data, 1, 5))
+        val := SubStr(data, 7)
+        ; others are automatic
+        if (type = "bool")
+            val := val == "True" ? 1 : 0    ; same as True/False
         _pyData.InsertAt(1, val)
         return 1
     }
@@ -201,7 +213,8 @@ class Script:
 
     @staticmethod
     def _to_ahk_str(val: Primitive) -> str:
-        return f"{val}\0"
+        str_ = f"{val:f}" if isinstance(val, float) else str(val)
+        return f"{type(val).__name__[:5]:<5} {str_}"
 
     def _f(self, msg: int, name: str, *args: Primitive) -> None:
         self._send(name)
@@ -231,10 +244,18 @@ class Script:
 
     @staticmethod
     def _from_ahk_str(str_: str) -> Primitive:
-        is_hex = str_.startswith('0x') and str_[2:].isdigit()
-        is_negative = str_.startswith('-') and str_[1:].isdigit()
-        if str_.isdigit() or is_hex or is_negative:
-            return int(str_, 0)
+        is_hex = str_.startswith('0x') and all(c in string.hexdigits for c in str_[2:])
+        if is_hex:
+            return int(str_, 16)
+
+        # noinspection PyShadowingNames
+        def is_num(str_):
+            return str_.isdigit() or (str_.startswith('-') and str_[1:].isdigit())
+
+        if is_num(str_):
+            return int(str_.lstrip('0') or '0', 0)
+        if is_num(str_.replace('.', '', 1)):
+            return float(str_)
         return str_
 
     def get(self, name: str) -> Primitive:
