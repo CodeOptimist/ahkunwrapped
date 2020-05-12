@@ -51,14 +51,14 @@ class Script:
     _PY_END := _PY_SEPARATOR _PY_SEPARATOR "`n"
     
     ; we can't peek() stdout/stderr, so write to both
-    _Py_Response(text) {
+    _Py_Response(ByRef text) {
         global _PY_END
         FileAppend, % text _PY_END, *                       ; stdout
         FileAppend, % "" _PY_END, **                        ; stderr
         return 1
     }
     
-    _Py_Exception(name, text) {
+    _Py_Exception(ByRef name, ByRef text) {
         global _pyData, _PY_SEPARATOR, _PY_END
         _pyData := []
         FileAppend, % "" _PY_END, *                         ; stdout
@@ -66,12 +66,12 @@ class Script:
         return 1
     }
     
-    _Py_UnexpectedPidError(wParam) {
+    _Py_UnexpectedPidError(ByRef wParam) {
         global _pyPid
         return _Py_Exception("''' + AhkUnexpectedPidError.__name__ + '''", "expected " _pyPid " received " wParam)
     }
     
-    _Py_CopyData(wParam, lParam, msg, hwnd) {
+    _Py_CopyData(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         global _pyData, _pyPid, _PY_SEPARATOR
         SetBatchLines, -1
         if (wParam != _pyPid)
@@ -99,7 +99,7 @@ class Script:
     
     ; call on main thread, much slower but may be necessary for DllCall() to avoid:
     ;   Error 0x8001010d An outgoing call cannot be made since the application is dispatching an input-synchronous call.
-    _Py_F_Main(wParam, lParam, msg, hwnd) {
+    _Py_F_Main(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         global _pyData, _pyPid
         SetBatchLines, -1
         if (wParam != _pyPid)
@@ -113,7 +113,7 @@ class Script:
         return 1
     }
     
-    _Py_F(wParam, lParam, msg, hwnd) {
+    _Py_F(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         global _pyData, _pyPid, _pyUserBatchLines
         SetBatchLines, -1
         if (wParam != _pyPid)
@@ -156,7 +156,7 @@ class Script:
         return _Py_Response(needResult ? result : "")
     }
     
-    _Py_Get(wParam, lParam, msg, hwnd) {
+    _Py_Get(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         local name, val
         SetBatchLines, -1
         if (wParam != _pyPid)
@@ -166,7 +166,7 @@ class Script:
         return _Py_Response(val)
     }
     
-    _Py_Set(wParam, lParam, msg, hwnd) {
+    _Py_Set(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         local name
         SetBatchLines, -1
         if (wParam != _pyPid)
