@@ -11,6 +11,7 @@ import time
 from subprocess import TimeoutExpired
 from typing import ClassVar
 from typing import Mapping
+from typing import Optional
 from typing import TypeVar
 
 import win32api
@@ -77,9 +78,10 @@ class Script:
         a := _pyData
         
         name := a.Pop()
-        
+        needResult := a.Pop()
         f := name
         len := a.Length()
+        
         if (len = 0)
             result := %f%()
         else if (len = 1)
@@ -103,7 +105,7 @@ class Script:
         else if (len = 10)
             result := %f%(a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop())
         
-        FileAppend, % result _PY_END, *
+        FileAppend, % (needResult ? result : "") _PY_END, *
         return 1
     }
     
@@ -142,7 +144,6 @@ class Script:
     
     _Py_F_Main:
         _Py_F(_pyData.Pop(), _pyData.Pop(), _pyData.Pop(), _pyData.Pop())
-        FileAppend, % "F_Main" _PY_END, *
     return
     '''
 
@@ -221,30 +222,25 @@ class Script:
         str_ = f"{val:f}" if isinstance(val, float) else str(val)
         return f"{type(val).__name__[:5]:<5} {str_}"
 
-    def _f(self, msg: int, name: str, *args: Primitive) -> None:
+    def _f(self, msg: int, name: str, *args: Primitive, need_result: bool) -> Optional[str]:
         self._send(name)
+        self._send(need_result)
         for arg in args:
             self._send(arg)
         self._send_message(msg)
-
-    def call(self, name: str, *args: Primitive) -> None:
-        self._f(Script.F, name, *args)
-        self._read_text()
-
-    def f(self, name: str, *args: Primitive) -> Primitive:
-        self._f(Script.F, name, *args)
         return Script._from_ahk_str(self._read_text())
 
-    # call from main AHK thread
+    def call(self, name: str, *args: Primitive) -> None:
+        self._f(Script.F, name, *args, need_result=False)
+
+    def f(self, name: str, *args: Primitive) -> Primitive:
+        return self._f(Script.F, name, *args, need_result=True)
+
     def call_main(self, name: str, *args: Primitive) -> None:
-        self._f(Script.F_MAIN, name, *args)
-        self._read_text()
-        assert self._read_text() == "F_Main"
+        self._f(Script.F_MAIN, name, *args, need_result=False)
 
     def f_main(self, name: str, *args: Primitive) -> Primitive:
-        self._f(Script.F_MAIN, name, *args)
-        result = Script._from_ahk_str(self._read_text())
-        assert self._read_text() == "F_Main"
+        result = self._f(Script.F_MAIN, name, *args, need_result=True)
         return result
 
     @staticmethod
