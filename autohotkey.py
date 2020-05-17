@@ -34,6 +34,7 @@ class AhkUnexpectedPidError(AhkError): pass
 class AhkUnsupportedValueError(AhkError): pass
 class AhkWarning(UserWarning): pass
 class AhkLossOfPrecisionWarning(AhkWarning): pass
+class AhkNewlineReplacementWarning(AhkWarning): pass
 
 
 class Script:
@@ -59,9 +60,14 @@ class Script:
     ; we can't peek() stdout/stderr, so write to both
     _Py_Response(ByRef outText, ByRef errText) {
         global _pyStdOut, _pyStdErr, _PY_SEPARATOR, _PY_END
+        
         _pyStdOut.WriteLine(outText _PY_END)
         _pyStdOut.Read(0)
-        _pyStdErr.WriteLine(errText _PY_END)
+        
+        if (!errText && InStr(outText, Chr(13)))
+            _pyStdErr.WriteLine("''' + AhkNewlineReplacementWarning.__name__ + r'''" _PY_SEPARATOR "'\r\n' and '\r' have been replaced with '\n' in result" _PY_END)''' + '''
+        else
+            _pyStdErr.WriteLine(errText _PY_END)
         _pyStdErr.Read(0)
         return 1
     }

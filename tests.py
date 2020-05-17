@@ -4,7 +4,7 @@ from functools import partial
 
 import hypothesis.strategies as st
 import pytest
-from hypothesis import assume, given
+from hypothesis import given
 
 import autohotkey
 from autohotkey import Script
@@ -13,6 +13,7 @@ ahk = Script.from_file('tests.ahk')
 echo = partial(ahk.f, 'Echo')
 echo_main = partial(ahk.f_main, 'Echo')
 echo(0.3333333333)
+echo("abc\rdef")
 
 
 @given(st.sampled_from([ahk.f, ahk.f_main]))
@@ -63,9 +64,12 @@ newlines = [''.join(x) for x in itertools.product('a\n\r', repeat=3)]
 
 @given(type_funcs, st.one_of(st.from_type(str), st.sampled_from(newlines)))
 def test_str(func, str_):
-    assume('\r' not in str_)
     if '\0' in str_ or Script.SEPARATOR in str_:
         with pytest.raises(autohotkey.AhkUnsupportedValueError):
             func(str_)
+    elif '\r' in str_:
+        with pytest.warns(autohotkey.AhkNewlineReplacementWarning):
+            ahk_str = str_.replace('\r\n', '\n').replace('\r', '\n')
+            assert func(str_, coerce_type=False) == ahk_str
     else:
         assert func(str_, coerce_type=False) == str_
