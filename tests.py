@@ -45,9 +45,12 @@ def test_int(func, int_):
 
 @given(type_funcs, st.from_type(float))
 def test_float(func, float_):
-    assume(not math.isnan(float_) and not math.isinf(float_))
-    ahk_float = float(f'{float_:.6f}')
-    assert func(float_) == ahk_float
+    if math.isnan(float_) or math.isinf(float_):
+        with pytest.raises(autohotkey.AhkUnsupportedValueError):
+            func(float_)
+    else:
+        ahk_float = float(f'{float_:.6f}')
+        assert func(float_) == ahk_float
 
 
 newlines = [''.join(x) for x in itertools.product('a\n\r', repeat=3)]

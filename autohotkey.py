@@ -1,6 +1,7 @@
 # Copyright (C) 2019  Christopher Galpin.  See /NOTICE.
 import array
 import atexit
+import math
 import os
 import shutil
 import string
@@ -29,6 +30,7 @@ class AhkExitException(AhkException): pass
 class AhkError(AhkException): pass
 class AhkFuncNotFoundError(AhkError): pass
 class AhkUnexpectedPidError(AhkError): pass
+class AhkUnsupportedValueError(AhkError): pass
 
 
 class Script:
@@ -295,8 +297,14 @@ class Script:
 
     @staticmethod
     def _to_ahk_str(val: Primitive) -> str:
-        str_ = f"{val:f}" if isinstance(val, float) else str(val)
-        return f"{type(val).__name__[:5]:<5} {str_}"
+        if isinstance(val, float):
+            if math.isnan(val) or math.isinf(val):
+                raise AhkUnsupportedValueError(val)
+            val_str = f'{val:.6f}'  # 6 decimal precision to match AutoHotkey
+            val_str = val_str.rstrip('0').rstrip('.')  # less text to send the better
+        else:
+            val_str = str(val)
+        return f"{type(val).__name__[:5]:<5} {val_str}"
 
     def _f(self, msg: int, name: str, *args: Primitive, need_result: bool) -> Optional[str]:
         self._send(msg, [name, need_result] + list(args))
