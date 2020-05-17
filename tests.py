@@ -12,6 +12,7 @@ from autohotkey import Script
 ahk = Script.from_file('tests.ahk')
 echo = partial(ahk.f, 'Echo')
 echo_main = partial(ahk.f_main, 'Echo')
+echo(0.3333333333)
 
 
 @given(st.sampled_from([ahk.f, ahk.f_main]))
@@ -50,7 +51,11 @@ def test_float(func, float_):
             func(float_)
     else:
         ahk_float = float(f'{float_:.6f}')
-        assert func(float_) == ahk_float
+        if ahk_float != float_:
+            with pytest.warns(autohotkey.AhkLossOfPrecisionWarning):
+                assert func(float_) == ahk_float
+        else:
+            assert func(float_) == float_
 
 
 newlines = [''.join(x) for x in itertools.product('a\n\r', repeat=3)]

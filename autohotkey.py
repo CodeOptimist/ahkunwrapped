@@ -16,6 +16,7 @@ from typing import Mapping
 from typing import Optional
 from typing import Sequence
 from typing import TypeVar
+from warnings import warn
 
 import win32api
 import win32con
@@ -31,6 +32,8 @@ class AhkError(AhkException): pass
 class AhkFuncNotFoundError(AhkError): pass
 class AhkUnexpectedPidError(AhkError): pass
 class AhkUnsupportedValueError(AhkError): pass
+class AhkWarning(UserWarning): pass
+class AhkLossOfPrecisionWarning(AhkWarning): pass
 
 
 class Script:
@@ -273,8 +276,11 @@ class Script:
         if err:
             name, text = tuple(map(str, err.split(Script.SEPARATOR)))
             exception = next((ex for ex in chain(AhkError.__subclasses__(), AhkException.__subclasses__()) if ex.__name__ == name), None)
+            warning = next((w for w in AhkWarning.__subclasses__() if w.__name__ == name), None)
             if exception:
                 raise exception(text)
+            if warning:
+                warn(warning(text))
         return out
 
     def _send_message(self, msg: int, lparam: bytes = None) -> None:
@@ -301,6 +307,8 @@ class Script:
             if math.isnan(val) or math.isinf(val):
                 raise AhkUnsupportedValueError(val)
             val_str = f'{val:.6f}'  # 6 decimal precision to match AutoHotkey
+            if float(val_str) != val:
+                warn(AhkLossOfPrecisionWarning(f'loss of precision from {val} to {val_str}'))
             val_str = val_str.rstrip('0').rstrip('.')  # less text to send the better
         else:
             if isinstance(val, str):
