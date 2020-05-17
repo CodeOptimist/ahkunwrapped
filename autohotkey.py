@@ -51,24 +51,26 @@ class Script:
     _PY_END := _PY_SEPARATOR _PY_SEPARATOR "`n"
     
     ; we can't peek() stdout/stderr, so write to both
-    _Py_Response(ByRef text) {
+    _Py_Response(ByRef outText, ByRef errText) {
         global _PY_END
-        FileAppend, % text _PY_END, *                       ; stdout
-        FileAppend, % "" _PY_END, **                        ; stderr
+        FileAppend, % outText _PY_END, *    ; stdout
+        FileAppend, % errText _PY_END, **   ; stderr
         return 1
     }
     
-    _Py_Exception(ByRef name, ByRef text) {
-        global _pyData, _PY_SEPARATOR, _PY_END
+    _Py_StdOut(ByRef text) {
+        return _Py_Response(text, "")
+    }
+    
+    _Py_StdErr(ByRef name, ByRef text) {
+        global _pyData, _PY_SEPARATOR
         _pyData := []
-        FileAppend, % "" _PY_END, *                         ; stdout
-        FileAppend, % name _PY_SEPARATOR text _PY_END, **   ; stderr
-        return 1
+        return _Py_Response("", name _PY_SEPARATOR text)
     }
     
     _Py_UnexpectedPidError(ByRef wParam) {
         global _pyPid
-        return _Py_Exception("''' + AhkUnexpectedPidError.__name__ + '''", "expected " _pyPid " received " wParam)
+        return _Py_StdErr("''' + AhkUnexpectedPidError.__name__ + '''", "expected " _pyPid " received " wParam)
     }
     
     _Py_CopyData(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
@@ -122,7 +124,7 @@ class Script:
         
         name := a.Pop()
         if (not IsFunc(name))
-            return _Py_Exception("''' + AhkFuncNotFoundError.__name__ + '''", name)
+            return _Py_StdErr("''' + AhkFuncNotFoundError.__name__ + '''", name)
         
         needResult := a.Pop()
         f := name
@@ -153,7 +155,7 @@ class Script:
             result := %f%(a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop())
         SetBatchLines, -1
         
-        return _Py_Response(needResult ? result : "")
+        return _Py_StdOut(needResult ? result : "")
     }
     
     _Py_Get(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
@@ -163,7 +165,7 @@ class Script:
             return _Py_UnexpectedPidError(wParam)
         name := _pyData.Pop()
         val := %name%
-        return _Py_Response(val)
+        return _Py_StdOut(val)
     }
     
     _Py_Set(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
@@ -190,13 +192,13 @@ class Script:
     OnMessage(''' + str(F) + ''', Func("_Py_F"))
     OnMessage(''' + str(F_MAIN) + ''', Func("_Py_F_Main"))
     
-    _Py_Response(A_ScriptHwnd)
+    _Py_StdOut(A_ScriptHwnd)
     
     SetBatchLines, % _pyUserBatchLines
     Func("AutoExec").Call() ; call if exists
     _pyUserBatchLines := A_BatchLines
     
-    _Py_Response("Initialized")
+    _Py_StdOut("Initialized")
     return
     
     _Py_F_Main:
