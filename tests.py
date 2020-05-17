@@ -25,9 +25,9 @@ def test_missing_func(func):
         func('BadFunc')
 
 
-def set_get(val):
+def set_get(val, coerce_type=True):
     ahk.set('myVar', val)
-    return ahk.get('myVar')
+    return ahk.get('myVar', coerce_type=coerce_type)
 
 
 type_funcs = st.sampled_from([echo, echo_main, set_get])
@@ -58,4 +58,4 @@ def test_str(func, str_):
     assume('\0' not in str_)
     assume('\r' not in str_)
     assume(Script.SEPARATOR not in str_)
-    assert func(str_) == ahk._from_ahk_str(str_)
+    assert func(str_, coerce_type=False) == str_

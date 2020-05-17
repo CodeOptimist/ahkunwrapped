@@ -295,20 +295,21 @@ class Script:
 
     def _f(self, msg: int, name: str, *args: Primitive, need_result: bool) -> Optional[str]:
         self._send(msg, [name, need_result] + list(args))
-        return Script._from_ahk_str(self._read_response())
+        return self._read_response()
 
     def call(self, name: str, *args: Primitive) -> None:
         self._f(Script.F, name, *args, need_result=False)
 
-    def f(self, name: str, *args: Primitive) -> Primitive:
-        return self._f(Script.F, name, *args, need_result=True)
+    def f(self, name: str, *args: Primitive, coerce_type: bool = True) -> Primitive:
+        response = self._f(Script.F, name, *args, need_result=True)
+        return self._from_ahk_str(response) if coerce_type else response
 
     def call_main(self, name: str, *args: Primitive) -> None:
         self._f(Script.F_MAIN, name, *args, need_result=False)
 
-    def f_main(self, name: str, *args: Primitive) -> Primitive:
-        result = self._f(Script.F_MAIN, name, *args, need_result=True)
-        return result
+    def f_main(self, name: str, *args: Primitive, coerce_type: bool = True) -> Primitive:
+        response = self._f(Script.F_MAIN, name, *args, need_result=True)
+        return self._from_ahk_str(response) if coerce_type else response
 
     @staticmethod
     def _from_ahk_str(str_: str) -> Primitive:
@@ -326,9 +327,10 @@ class Script:
             return float(str_)
         return str_
 
-    def get(self, name: str) -> Primitive:
+    def get(self, name: str, coerce_type: bool = True) -> Primitive:
         self._send(Script.GET, [name])
-        return Script._from_ahk_str(self._read_response())
+        response = self._read_response()
+        return Script._from_ahk_str(response) if coerce_type else response
 
     def set(self, name: str, val: Primitive) -> None:
         self._send(Script.SET, [name, val])
