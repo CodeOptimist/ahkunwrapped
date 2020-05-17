@@ -45,16 +45,19 @@ class Script:
     #NoEnv
     #NoTrayIcon
     #Persistent
-    FileEncoding, utf-8-raw
     SetWorkingDir, ''' + DIR_PATH + '''
     ; _PY_SEPARATOR assignment is prepended to core below
-    _PY_END := _PY_SEPARATOR _PY_SEPARATOR "`n"
+    _PY_END := _PY_SEPARATOR _PY_SEPARATOR
+    _pyStdOut := FileOpen("*", "w", "utf-8-raw")
+    _pyStdErr := FileOpen("**", "w", "utf-8-raw")
     
     ; we can't peek() stdout/stderr, so write to both
     _Py_Response(ByRef outText, ByRef errText) {
-        global _PY_END
-        FileAppend, % outText _PY_END, *    ; stdout
-        FileAppend, % errText _PY_END, **   ; stderr
+        global _pyStdOut, _pyStdErr, _PY_SEPARATOR, _PY_END
+        _pyStdOut.WriteLine(outText _PY_END)
+        _pyStdOut.Read(0)
+        _pyStdErr.WriteLine(errText _PY_END)
+        _pyStdErr.Read(0)
         return 1
     }
     
