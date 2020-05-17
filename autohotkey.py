@@ -303,6 +303,11 @@ class Script:
             val_str = f'{val:.6f}'  # 6 decimal precision to match AutoHotkey
             val_str = val_str.rstrip('0').rstrip('.')  # less text to send the better
         else:
+            if isinstance(val, str):
+                if '\x00' in val:
+                    raise AhkUnsupportedValueError(r"string contains null terminator '\x00' which AutoHotkey ignores characters beyond")
+                if Script.SEPARATOR in val:
+                    raise AhkUnsupportedValueError(f'string contains {repr(Script.SEPARATOR)} which is reserved for messages to AutoHotkey')
             val_str = str(val)
         return f"{type(val).__name__[:5]:<5} {val_str}"
 

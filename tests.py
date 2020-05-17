@@ -58,7 +58,9 @@ newlines = [''.join(x) for x in itertools.product('a\n\r', repeat=3)]
 
 @given(type_funcs, st.one_of(st.from_type(str), st.sampled_from(newlines)))
 def test_str(func, str_):
-    assume('\0' not in str_)
     assume('\r' not in str_)
-    assume(Script.SEPARATOR not in str_)
-    assert func(str_, coerce_type=False) == str_
+    if '\0' in str_ or Script.SEPARATOR in str_:
+        with pytest.raises(autohotkey.AhkUnsupportedValueError):
+            func(str_)
+    else:
+        assert func(str_, coerce_type=False) == str_
