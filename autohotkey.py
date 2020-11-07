@@ -11,15 +11,16 @@ import sys
 import time
 from itertools import chain
 from subprocess import TimeoutExpired
-from typing import ClassVar, Mapping, Optional, Sequence, TypeVar
+from typing import ClassVar, Mapping, Optional, Sequence, Union
 from warnings import warn
+from win32api import OutputDebugString
 
 import win32api
 import win32con
 
 # noinspection PyProtectedMember
 DIR_PATH = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
-Primitive = TypeVar("Primitive", bool, float, int, str)
+Primitive = Union[bool, float, int, str]
 
 
 class AhkException(Exception): pass
