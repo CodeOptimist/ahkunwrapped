@@ -56,9 +56,19 @@ class Script:
     _pyStdOut := FileOpen("*", "w", "utf-8-raw")
     _pyStdErr := FileOpen("**", "w", "utf-8-raw")
     
-    ; we can't peek() stdout/stderr, so write to both
-    _Py_Response(ByRef outText, ByRef errText) {
-        global _pyStdOut, _pyStdErr, _PY_SEPARATOR, _PY_END
+    ; we can't peek() stdout/stderr, so always write to both so we don't hang waiting to read nothing
+    _Py_Response(ByRef outText, ByRef errText, ByRef onMain := False) {
+        global _pyData, _pyStdOut, _pyStdErr, _PY_SEPARATOR, _PY_END
+        
+        if (not onMain) {
+            ; script hangs on WriteLine without this; flushing in batches won't work
+            if (StrPut(outText _PY_END "`n", "utf-8") > 4096 or StrPut(errText _PY_END "`n", "utf-8") > 4096) {
+                _pyData.Push(errText)
+                _pyData.Push(outText)
+                SetTimer, _Py_Response_Main, -1
+                return 1
+            }
+        }
         
         _pyStdOut.WriteLine(outText _PY_END)
         _pyStdOut.Read(0)
@@ -71,14 +81,14 @@ class Script:
         return 1
     }
     
-    _Py_StdOut(ByRef text) {
-        return _Py_Response(text, "")
+    _Py_StdOut(ByRef text, ByRef onMain := False) {
+        return _Py_Response(text, "", onMain)
     }
     
-    _Py_StdErr(ByRef name, ByRef text) {
+    _Py_StdErr(ByRef name, ByRef text, onMain := False) {
         global _pyData, _PY_SEPARATOR
         _pyData := []
-        return _Py_Response("", name _PY_SEPARATOR text)
+        return _Py_Response("", name _PY_SEPARATOR text, onMain)
     }
     
     _Py_UnexpectedPidError(ByRef wParam) {
@@ -128,7 +138,7 @@ class Script:
         return 1
     }
     
-    _Py_MsgF(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
+    _Py_MsgF(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd, ByRef onMain := False) {
         global _pyData, _pyPid, _pyUserBatchLines
         SetBatchLines, -1
         if (wParam != _pyPid)
@@ -137,7 +147,7 @@ class Script:
         
         name := a.Pop()
         if (not IsFunc(name))
-            return _Py_StdErr("''' + AhkFuncNotFoundError.__name__ + '''", name)
+            return _Py_StdErr("''' + AhkFuncNotFoundError.__name__ + '''", name, onMain)
         
         needResult := a.Pop()
         f := name
@@ -168,7 +178,7 @@ class Script:
             result := %f%(a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop())
         SetBatchLines, -1
         
-        return _Py_StdOut(needResult ? result : "")
+        return _Py_StdOut(needResult ? result : "", onMain)
     }
     
     _Py_MsgGet(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
@@ -216,7 +226,12 @@ class Script:
     
     _Py_MsgF_Main:
         SetBatchLines, -1
-        _Py_MsgF(_pyData.Pop(), _pyData.Pop(), _pyData.Pop(), _pyData.Pop())
+        _Py_MsgF(_pyData.Pop(), _pyData.Pop(), _pyData.Pop(), _pyData.Pop(), True)
+    return
+    
+    _Py_Response_Main:
+        SetBatchLines, -1
+        _Py_Response(_pyData.Pop(), _pyData.Pop(), True)
     return
     '''
 
