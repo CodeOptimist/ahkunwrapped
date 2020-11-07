@@ -17,6 +17,7 @@ from win32api import OutputDebugString
 
 import win32api
 import win32con
+import win32job
 
 # noinspection PyProtectedMember
 DIR_PATH = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
@@ -221,7 +222,6 @@ class Script:
 
     def __init__(self, script: str = "", ahk_path: str = None, execute_from: str = None) -> None:
         self.script = script
-        self.pid = os.getpid()
 
         if ahk_path is None:
             lib_path = os.path.join(DIR_PATH, r'lib\AutoHotkey\AutoHotkey.exe')
@@ -244,11 +244,25 @@ class Script:
                     shutil.copyfile(ahk_path, ahk_into_folder)
             ahk_path = ahk_into_folder
 
+        self.pid = os.getpid()
+
+        # if we exit, exit AutoHotkey
+        atexit.register(self.exit)
+
+        # if we're killed, kill AutoHotkey
+        self.job = win32job.CreateJobObject(None, "")
+        extended_info = win32job.QueryInformationJobObject(self.job, win32job.JobObjectExtendedLimitInformation)
+        extended_info['BasicLimitInformation']['LimitFlags'] = win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        win32job.SetInformationJobObject(self.job, win32job.JobObjectExtendedLimitInformation, extended_info)
+        # add ourselves and subprocess will inherit job membership
+        handle = win32api.OpenProcess(win32con.PROCESS_TERMINATE | win32con.PROCESS_SET_QUOTA, False, self.pid)
+        win32job.AssignProcessToJobObject(self.job, handle)
+        win32api.CloseHandle(handle)
+
         self.cmd = [ahk_path, "/CP65001", "*"]
         # must pipe all three within a PyInstaller bundled exe
         # text=True is a better alias for universal_newlines=True but requires newer Python
         self.popen = subprocess.Popen(self.cmd, executable=ahk_path, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', universal_newlines=True)
-        atexit.register(self.exit)
         self.popen.stdin.write(Script.CORE)
         self.popen.stdin.write(self.script)
         self.popen.stdin.close()
@@ -362,6 +376,10 @@ class Script:
 
     def set(self, name: str, val: Primitive) -> None:
         self._send(Script.MSG_SET, [name, val])
+
+    # if AutoHotkey is killed, get error code
+    def poll(self) -> Optional[int]:
+        return self.popen.poll()
 
     def exit(self, timeout=5.0) -> None:
         try:
