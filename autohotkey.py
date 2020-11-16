@@ -35,6 +35,22 @@ class AhkLossOfPrecisionWarning(AhkWarning): pass
 class AhkNewlineReplacementWarning(AhkWarning): pass
 
 
+class AhkUserException(AhkException):
+    def __init__(self, message: str, what: str, extra: str, file: str, line: Union[str, int]):
+        self.message: str = message
+        self.what: str = what
+        self.extra: str = extra
+        self.file: str = file
+        self.line: int = int(line)
+
+    def __str__(self) -> str:
+        # Python 3.8: return f"{message=}, {what=}, {extra=}, {file=}, {line=}"
+        return f"(message={repr(self.message)}, what={repr(self.what)}, extra={repr(self.extra)}, file={repr(self.file)}, line={repr(self.line)})"
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}{self}"
+
+
 class Script:
     # Python 3.8: use Final instead of ClassVar https://www.python.org/dev/peps/pep-0591/#id14
     MSG_GET: ClassVar[int] = 0x8001
@@ -138,7 +154,7 @@ class Script:
     }
     
     _Py_MsgF(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd, ByRef onMain := False) {
-        global _pyData, _pyPid, _pyUserBatchLines
+        global _pyData, _pyPid, _pyUserBatchLines, _PY_SEPARATOR
         SetBatchLines, -1
         if (wParam != _pyPid)
             return _Py_UnexpectedPidError(wParam)
@@ -149,7 +165,14 @@ class Script:
         needResult := _pyData.RemoveAt(1)
 
         SetBatchLines, % _pyUserBatchLines
-        result := %func%(_pyData*)
+        try result := %func%(_pyData*)
+        catch e {
+            SetBatchLines, -1
+            _pyData := []
+            return _Py_StdErr("''' + AhkUserException.__name__ + '''"
+                , e.Message _PY_SEPARATOR e.What _PY_SEPARATOR e.Extra _PY_SEPARATOR e.File _PY_SEPARATOR e.Line
+                , onMain)
+        }
         SetBatchLines, -1
         _pyData := []
         
@@ -280,13 +303,15 @@ class Script:
         # OutputDebugString(f"Out: '{out}' Err: '{err}"
 
         if err:
-            name, text = tuple(map(str, err.split(Script.SEPARATOR)))
+            name, args = err.split(Script.SEPARATOR, 1)
             exception_class = next((ex for ex in chain(AhkError.__subclasses__(), AhkException.__subclasses__(), (AhkException,)) if ex.__name__ == name), None)
             warning_class = next((w for w in chain(AhkWarning.__subclasses__(), (AhkWarning,)) if w.__name__ == name), None)
             if exception_class:
-                raise exception_class(text)
+                if exception_class is AhkUserException:
+                    raise AhkUserException(*args.split(Script.SEPARATOR))
+                raise exception_class(args)
             if warning_class:
-                warn(warning_class(text))
+                warn(warning_class(args))
         return out
 
     def _send_message(self, msg: int, lparam: bytes = None) -> None:
