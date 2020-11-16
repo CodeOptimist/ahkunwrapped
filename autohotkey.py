@@ -117,7 +117,7 @@ class Script:
             ; others are automatic
             if (type = "bool")
                 val := val == "True" ? 1 : 0    ; same as True/False
-            _pyData.InsertAt(1, val)
+            _pyData.Push(val)
         }
         return 1
     }
@@ -129,11 +129,10 @@ class Script:
         SetBatchLines, -1
         if (wParam != _pyPid)
             return _Py_UnexpectedPidError(wParam)
-        a := _pyData
-        a.Push(hwnd)
-        a.Push(msg)
-        a.Push(lParam)
-        a.Push(wParam)
+        _pyData.Push(hwnd)
+        _pyData.Push(msg)
+        _pyData.Push(lParam)
+        _pyData.Push(wParam)
         SetTimer, _Py_MsgF_Main, -1
         return 1
     }
@@ -143,40 +142,16 @@ class Script:
         SetBatchLines, -1
         if (wParam != _pyPid)
             return _Py_UnexpectedPidError(wParam)
-        a := _pyData
         
-        name := a.Pop()
-        if (not IsFunc(name))
-            return _Py_StdErr("''' + AhkFuncNotFoundError.__name__ + '''", name, onMain)
-        
-        needResult := a.Pop()
-        f := name
-        len := a.Length()
-        
+        func := _pyData.RemoveAt(1)
+        if (not IsFunc(func))
+            return _Py_StdErr("''' + AhkFuncNotFoundError.__name__ + '''", func, onMain)
+        needResult := _pyData.RemoveAt(1)
+
         SetBatchLines, % _pyUserBatchLines
-        if (len = 0)
-            result := %f%()
-        else if (len = 1)
-            result := %f%(a.Pop())
-        else if (len = 2)
-            result := %f%(a.Pop(), a.Pop())
-        else if (len = 3)
-            result := %f%(a.Pop(), a.Pop(), a.Pop())
-        else if (len = 4)
-            result := %f%(a.Pop(), a.Pop(), a.Pop(), a.Pop())
-        else if (len = 5)
-            result := %f%(a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop())
-        else if (len = 6)
-            result := %f%(a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop())
-        else if (len = 7)
-            result := %f%(a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop())
-        else if (len = 8)
-            result := %f%(a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop())
-        else if (len = 9)
-            result := %f%(a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop())
-        else if (len = 10)
-            result := %f%(a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop(), a.Pop())
+        result := %func%(_pyData*)
         SetBatchLines, -1
+        _pyData := []
         
         return _Py_StdOut(needResult ? result : "", onMain)
     }
@@ -186,7 +161,7 @@ class Script:
         SetBatchLines, -1
         if (wParam != _pyPid)
             return _Py_UnexpectedPidError(wParam)
-        name := _pyData.Pop()
+        name := _pyData.RemoveAt(1)
         val := %name%
         return _Py_StdOut(val)
     }
@@ -196,8 +171,8 @@ class Script:
         SetBatchLines, -1
         if (wParam != _pyPid)
             return _Py_UnexpectedPidError(wParam)
-        name := _pyData.Pop()
-        %name% := _pyData.Pop()
+        name := _pyData.RemoveAt(1)
+        %name% := _pyData.RemoveAt(1)
         return 1
     }
     
