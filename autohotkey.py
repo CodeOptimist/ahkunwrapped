@@ -1,4 +1,4 @@
-# Copyright (C) 2019  Christopher Galpin.  See /NOTICE.
+# Copyright (C) 2019, 2020  Christopher Galpin.  Licensed under AGPL-3.0-or-later.  See /NOTICE.
 import array
 import atexit
 import math
@@ -11,11 +11,7 @@ import sys
 import time
 from itertools import chain
 from subprocess import TimeoutExpired
-from typing import ClassVar
-from typing import Mapping
-from typing import Optional
-from typing import Sequence
-from typing import TypeVar
+from typing import ClassVar, Mapping, Optional, Sequence, TypeVar
 from warnings import warn
 
 import win32api
@@ -38,14 +34,15 @@ class AhkNewlineReplacementWarning(AhkWarning): pass
 
 
 class Script:
-    GET: ClassVar = 0x8001
-    SET: ClassVar = 0x8002
-    F: ClassVar = 0x8003
-    F_MAIN: ClassVar = 0x8004
-    SEPARATOR: ClassVar = '\3'
-    END: ClassVar = SEPARATOR + SEPARATOR
+    # Python 3.8: use Final instead of ClassVar https://www.python.org/dev/peps/pep-0591/#id14
+    MSG_GET: ClassVar[int] = 0x8001
+    MSG_SET: ClassVar[int] = 0x8002
+    MSG_F: ClassVar[int] = 0x8003
+    MSG_F_MAIN: ClassVar[int] = 0x8004
+    SEPARATOR: ClassVar[str] = '\3'
+    END: ClassVar[str] = SEPARATOR + SEPARATOR
 
-    CORE: ClassVar = '''
+    CORE: ClassVar[str] = '''
     _pyUserBatchLines := A_BatchLines
     SetBatchLines, -1
     #NoEnv
@@ -87,7 +84,7 @@ class Script:
         return _Py_StdErr("''' + AhkUnexpectedPidError.__name__ + '''", "expected " _pyPid " received " wParam)
     }
     
-    _Py_CopyData(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
+    _Py_MsgCopyData(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         global _pyData, _pyPid, _PY_SEPARATOR
         SetBatchLines, -1
         if (wParam != _pyPid)
@@ -115,7 +112,7 @@ class Script:
     
     ; call on main thread, much slower but may be necessary for DllCall() to avoid:
     ;   Error 0x8001010d An outgoing call cannot be made since the application is dispatching an input-synchronous call.
-    _Py_F_Main(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
+    _Py_MsgF_Main(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         global _pyData, _pyPid
         SetBatchLines, -1
         if (wParam != _pyPid)
@@ -125,11 +122,11 @@ class Script:
         a.Push(msg)
         a.Push(lParam)
         a.Push(wParam)
-        SetTimer, _Py_F_Main, -1
+        SetTimer, _Py_MsgF_Main, -1
         return 1
     }
     
-    _Py_F(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
+    _Py_MsgF(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         global _pyData, _pyPid, _pyUserBatchLines
         SetBatchLines, -1
         if (wParam != _pyPid)
@@ -172,7 +169,7 @@ class Script:
         return _Py_StdOut(needResult ? result : "")
     }
     
-    _Py_Get(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
+    _Py_MsgGet(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         local name, val
         SetBatchLines, -1
         if (wParam != _pyPid)
@@ -182,7 +179,7 @@ class Script:
         return _Py_StdOut(val)
     }
     
-    _Py_Set(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
+    _Py_MsgSet(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         local name
         SetBatchLines, -1
         if (wParam != _pyPid)
@@ -200,11 +197,11 @@ class Script:
     _pyPid := ''' + str(os.getpid()) + '''
     
     ; must return non-zero to signal completion
-    OnMessage(''' + str(win32con.WM_COPYDATA) + ''', Func("_Py_CopyData"))
-    OnMessage(''' + str(GET) + ''', Func("_Py_Get"))
-    OnMessage(''' + str(SET) + ''', Func("_Py_Set"))
-    OnMessage(''' + str(F) + ''', Func("_Py_F"))
-    OnMessage(''' + str(F_MAIN) + ''', Func("_Py_F_Main"))
+    OnMessage(''' + str(win32con.WM_COPYDATA) + ''', Func("_Py_MsgCopyData"))
+    OnMessage(''' + str(MSG_GET) + ''', Func("_Py_MsgGet"))
+    OnMessage(''' + str(MSG_SET) + ''', Func("_Py_MsgSet"))
+    OnMessage(''' + str(MSG_F) + ''', Func("_Py_MsgF"))
+    OnMessage(''' + str(MSG_F_MAIN) + ''', Func("_Py_MsgF_Main"))
     
     _Py_StdOut(A_ScriptHwnd)
     
@@ -215,9 +212,9 @@ class Script:
     _Py_StdOut("Initialized")
     return
     
-    _Py_F_Main:
+    _Py_MsgF_Main:
         SetBatchLines, -1
-        _Py_F(_pyData.Pop(), _pyData.Pop(), _pyData.Pop(), _pyData.Pop())
+        _Py_MsgF(_pyData.Pop(), _pyData.Pop(), _pyData.Pop(), _pyData.Pop())
     return
     '''
 
@@ -252,10 +249,10 @@ class Script:
         self.cmd = [ahk_path, "/CP65001", "*"]
         # must pipe all three within a PyInstaller bundled exe
         # text=True is a better alias for universal_newlines=True but requires newer Python
-        self.ahk = subprocess.Popen(self.cmd, executable=ahk_path, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', universal_newlines=True)
+        self.popen = subprocess.Popen(self.cmd, executable=ahk_path, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', universal_newlines=True)
         atexit.register(self.exit)
-        self.ahk.stdin.write(self.script)
-        self.ahk.stdin.close()
+        self.popen.stdin.write(self.script)
+        self.popen.stdin.close()
 
         self.hwnd = int(self._read_response(), 16)
         assert self._read_response() == "Initialized"
@@ -273,27 +270,27 @@ class Script:
         end = f"{Script.END}\n"
         out, err = "", ""
         while out == "" or not out.endswith(end):
-            out += self.ahk.stdout.readline()
+            out += self.popen.stdout.readline()
         while err == "" or not err.endswith(end):
-            err += self.ahk.stderr.readline()
+            err += self.popen.stderr.readline()
         out, err = out[:-len(end)], err[:-len(end)]
         # OutputDebugString(f"Out: '{out}' Err: '{err}"
 
         if err:
             name, text = tuple(map(str, err.split(Script.SEPARATOR)))
-            exception = next((ex for ex in chain(AhkError.__subclasses__(), AhkException.__subclasses__()) if ex.__name__ == name), None)
-            warning = next((w for w in AhkWarning.__subclasses__() if w.__name__ == name), None)
-            if exception:
-                raise exception(text)
-            if warning:
-                warn(warning(text))
+            exception_class = next((ex for ex in chain(AhkError.__subclasses__(), AhkException.__subclasses__()) if ex.__name__ == name), None)
+            warning_class = next((w for w in AhkWarning.__subclasses__() if w.__name__ == name), None)
+            if exception_class:
+                raise exception_class(text)
+            if warning_class:
+                warn(warning_class(text))
         return out
 
     def _send_message(self, msg: int, lparam: bytes = None) -> None:
         # this is essential because messages are ignored if uninterruptible (e.g. in menu)
         # wparam is normally source window handle, but we don't have a window
         while not win32api.SendMessage(self.hwnd, msg, self.pid, lparam):
-            if self.ahk.poll() is not None:
+            if self.popen.poll() is not None:
                 raise AhkExitException()
             time.sleep(0.01)
 
@@ -330,17 +327,17 @@ class Script:
         return self._read_response()
 
     def call(self, name: str, *args: Primitive) -> None:
-        self._f(Script.F, name, *args, need_result=False)
+        self._f(Script.MSG_F, name, *args, need_result=False)
 
     def f(self, name: str, *args: Primitive, coerce_type: bool = True) -> Primitive:
-        response = self._f(Script.F, name, *args, need_result=True)
+        response = self._f(Script.MSG_F, name, *args, need_result=True)
         return self._from_ahk_str(response) if coerce_type else response
 
     def call_main(self, name: str, *args: Primitive) -> None:
-        self._f(Script.F_MAIN, name, *args, need_result=False)
+        self._f(Script.MSG_F_MAIN, name, *args, need_result=False)
 
     def f_main(self, name: str, *args: Primitive, coerce_type: bool = True) -> Primitive:
-        response = self._f(Script.F_MAIN, name, *args, need_result=True)
+        response = self._f(Script.MSG_F_MAIN, name, *args, need_result=True)
         return self._from_ahk_str(response) if coerce_type else response
 
     @staticmethod
@@ -350,7 +347,7 @@ class Script:
             return int(str_, 16)
 
         # noinspection PyShadowingNames
-        def is_num(str_):
+        def is_num(str_: str) -> bool:
             return str_.isdigit() or (str_.startswith('-') and str_[1:].isdigit())
 
         if is_num(str_):
@@ -360,23 +357,23 @@ class Script:
         return str_
 
     def get(self, name: str, coerce_type: bool = True) -> Primitive:
-        self._send(Script.GET, [name])
+        self._send(Script.MSG_GET, [name])
         response = self._read_response()
         return Script._from_ahk_str(response) if coerce_type else response
 
     def set(self, name: str, val: Primitive) -> None:
-        self._send(Script.SET, [name, val])
+        self._send(Script.MSG_SET, [name, val])
 
     def exit(self, timeout=5.0) -> None:
         try:
             self.call("_Py_ExitApp")  # clean, removes tray icons etc.
-            return_code = self.ahk.wait(timeout)
+            return_code = self.popen.wait(timeout)
             if return_code:
                 raise subprocess.CalledProcessError(return_code, self.cmd)
         except AhkExitException:
             pass
         except TimeoutExpired:
-            self.ahk.terminate()
+            self.popen.terminate()
         except Exception:
-            self.ahk.terminate()
+            self.popen.terminate()
             raise

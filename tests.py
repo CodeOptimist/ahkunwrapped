@@ -32,20 +32,20 @@ def set_get(val, coerce_type=True):
     return ahk.get('myVar', coerce_type=coerce_type)
 
 
-type_funcs = st.sampled_from([echo, echo_main, set_get])
+result_funcs = st.sampled_from([echo, echo_main, set_get])
 
 
-@given(type_funcs, st.booleans())
+@given(result_funcs, st.booleans())
 def test_bool(func, bool_):
     assert func(bool_) == bool_
 
 
-@given(type_funcs, st.integers())
+@given(result_funcs, st.integers())
 def test_int(func, int_):
     assert func(int_) == int_
 
 
-@given(type_funcs, st.from_type(float))
+@given(result_funcs, st.from_type(float))
 def test_float(func, float_):
     if math.isnan(float_) or math.isinf(float_):
         with pytest.raises(autohotkey.AhkUnsupportedValueError):
@@ -62,7 +62,7 @@ def test_float(func, float_):
 newlines = [''.join(x) for x in itertools.product('a\n\r', repeat=3)]
 
 
-@given(type_funcs, st.one_of(st.from_type(str), st.sampled_from(newlines)))
+@given(result_funcs, st.one_of(st.from_type(str), st.sampled_from(newlines)))
 def test_str(func, str_):
     if '\0' in str_ or Script.SEPARATOR in str_:
         with pytest.raises(autohotkey.AhkUnsupportedValueError):

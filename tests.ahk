@@ -1,7 +1,7 @@
 #SingleInstance, force
 
 Echo(val) {
-    return % val
+    return val
 }
 
 GetSmile() {
