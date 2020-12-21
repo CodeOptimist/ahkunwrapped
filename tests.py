@@ -1,6 +1,7 @@
 import itertools
 import math
 from functools import partial
+from pathlib import Path
 
 import hypothesis.strategies as st
 import pytest
@@ -9,7 +10,7 @@ from hypothesis import given
 import autohotkey
 from autohotkey import Script
 
-ahk = Script.from_file('tests.ahk')
+ahk = Script.from_file(Path('tests.ahk'))
 echo = partial(ahk.f, 'Echo')
 echo_main = partial(ahk.f_main, 'Echo')
 echo(0.3333333333)

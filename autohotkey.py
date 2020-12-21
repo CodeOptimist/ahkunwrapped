@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 from itertools import chain
+from pathlib import Path
 from subprocess import TimeoutExpired
 from typing import ClassVar, Mapping, Optional, Sequence, Union
 from warnings import warn
@@ -20,7 +21,7 @@ import win32con
 import win32job
 
 # noinspection PyProtectedMember
-DIR_PATH = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+DIR_PATH = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).parent
 Primitive = Union[bool, float, int, str]
 
 
@@ -66,7 +67,7 @@ class Script:
     #NoEnv
     #NoTrayIcon
     #Persistent
-    SetWorkingDir, ''' + DIR_PATH + '''
+    SetWorkingDir, ''' + str(DIR_PATH) + '''
     _PY_SEPARATOR := ''' + f'Chr({ord(SEPARATOR)})' + '''
     _PY_END := _PY_SEPARATOR _PY_SEPARATOR
     _pyStdOut := FileOpen("*", "w", "utf-8-raw")
@@ -233,19 +234,20 @@ class Script:
     return
     '''
 
-    def __init__(self, script: str = "", ahk_path: str = None, execute_from: str = None) -> None:
+    def __init__(self, script: str = "", ahk_path: Path = None, execute_from: Path = None) -> None:
         self.script = script
 
         if ahk_path is None:
-            lib_path = os.path.join(DIR_PATH, r'lib\AutoHotkey\AutoHotkey.exe')
-            prog_path = os.path.join(os.environ.get('ProgramW6432', os.environ['ProgramFiles']), r'AutoHotkey\AutoHotkey.exe')
-            ahk_path = lib_path if os.path.exists(lib_path) else prog_path if os.path.exists(prog_path) else None
-        assert os.path.exists(ahk_path)
+            lib_path = DIR_PATH / r'lib\AutoHotkey\AutoHotkey.exe'
+            prog_path = Path(os.environ.get('ProgramW6432', os.environ['ProgramFiles'])) / r'AutoHotkey\AutoHotkey.exe'
+            ahk_path = lib_path if lib_path.is_file() else prog_path if prog_path.is_file() else None
+        assert ahk_path and ahk_path.is_file()
 
         # Windows notification area relies on consistent exe path
         if execute_from is not None:
-            assert os.path.isdir(execute_from)
-            ahk_into_folder = os.path.join(execute_from, os.path.basename(ahk_path))
+            execute_from_dir = Path(execute_from)
+            assert execute_from_dir.is_dir()
+            ahk_into_folder = execute_from_dir / ahk_path.name
             try:
                 os.link(ahk_path, ahk_into_folder)
             except FileExistsError:
@@ -272,10 +274,10 @@ class Script:
         win32job.AssignProcessToJobObject(self.job, handle)
         win32api.CloseHandle(handle)
 
-        self.cmd = [ahk_path, "/CP65001", "*"]
+        self.cmd = [str(ahk_path), "/CP65001", "*"]
         # must pipe all three within a PyInstaller bundled exe
         # text=True is a better alias for universal_newlines=True but requires newer Python
-        self.popen = subprocess.Popen(self.cmd, executable=ahk_path, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', universal_newlines=True)
+        self.popen = subprocess.Popen(self.cmd, executable=str(ahk_path), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', universal_newlines=True)
         self.popen.stdin.write(Script.CORE)
         self.popen.stdin.write(self.script)
         self.popen.stdin.close()
@@ -284,8 +286,10 @@ class Script:
         assert self._read_response() == "Initialized"
 
     @staticmethod
-    def from_file(path: str, format_dict: Mapping[str, str] = None, ahk_path: str = None, execute_from: str = None) -> 'Script':
-        with open(os.path.join(DIR_PATH, path), encoding='utf-8') as f:
+    def from_file(path: Path, format_dict: Mapping[str, str] = None, ahk_path: Path = None, execute_from: Path = None) -> 'Script':
+        if not path.is_absolute():
+            path = DIR_PATH / path
+        with path.open(encoding='utf-8') as f:
             script = f.read()
         if format_dict is not None:
             script = script.replace(r'{', r'{{').replace(r'}', r'}}').replace(r'{{{', r'').replace(r'}}}', r'')
