@@ -294,7 +294,9 @@ class Script:
         if format_dict is not None:
             script = script.replace(r'{', r'{{').replace(r'}', r'}}').replace(r'{{{', r'').replace(r'}}}', r'')
             script = script.format(**format_dict)
-        return Script(script, ahk_path, execute_from)
+        script = Script(script, ahk_path, execute_from)
+        script.file = path  # for exceptions
+        return script
 
     def _read_response(self) -> str:
         end = f"{Script.END}\n"
@@ -313,6 +315,9 @@ class Script:
             if exception_class:
                 if exception_class is AhkUserException:
                     raise AhkUserException(*args.split(Script.SEPARATOR))
+                    user_exception.file = self.file or user_exception.file
+                    user_exception.line -= Script.CORE.count('\n')
+                    raise user_exception
                 raise exception_class(args)
             if warning_class:
                 warn(warning_class(args))
