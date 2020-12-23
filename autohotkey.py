@@ -25,15 +25,27 @@ DIR_PATH = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file_
 Primitive = Union[bool, float, int, str]
 
 
-class AhkException(Exception): pass
-class AhkExitException(AhkException): pass
-class AhkError(AhkException): pass
-class AhkFuncNotFoundError(AhkError): pass
-class AhkUnexpectedPidError(AhkError): pass
-class AhkUnsupportedValueError(AhkError): pass
-class AhkWarning(UserWarning): pass
-class AhkLossOfPrecisionWarning(AhkWarning): pass
-class AhkNewlineReplacementWarning(AhkWarning): pass
+class AhkException(Exception): pass                 # noqa: E701
+class AhkExitException(AhkException): pass          # noqa: E701
+class AhkError(AhkException): pass                  # noqa: E701
+class AhkFuncNotFoundError(AhkError): pass          # noqa: E701
+class AhkUnsupportedValueError(AhkError): pass      # noqa: E701
+class AhkWarning(UserWarning): pass                 # noqa: E701
+
+
+class AhkUnexpectedPidError(AhkError):
+    def __init__(self, expected_pid: str, received: str):
+        super().__init__(f'expected {expected_pid} received {received}')
+
+
+class AhkLossOfPrecisionWarning(AhkWarning):
+    def __init__(self, val: float, val_str: str):
+        super().__init__(f'loss of precision from {val} to {val_str}')
+
+
+class AhkNewlineReplacementWarning(AhkWarning):
+    def __init__(self, _: str):
+        super().__init__(r"'\r\n' and '\r' have been replaced with '\n' in result")
 
 
 class AhkUserException(AhkException):
@@ -91,7 +103,7 @@ class Script:
         _pyStdOut.Read(0)
         
         if (!errText && InStr(outText, Chr(13)))
-            _pyStdErr.WriteLine("''' + AhkNewlineReplacementWarning.__name__ + r'''" _PY_SEPARATOR "'\r\n' and '\r' have been replaced with '\n' in result" _PY_END)''' + '''
+            _pyStdErr.WriteLine("''' + AhkNewlineReplacementWarning.__name__ + r'''" _PY_SEPARATOR "" _PY_END)''' + '''
         else
             _pyStdErr.WriteLine(errText _PY_END)
         _pyStdErr.Read(0)
@@ -109,8 +121,8 @@ class Script:
     }
     
     _Py_UnexpectedPidError(ByRef wParam) {
-        global _pyPid
-        return _Py_StdErr("''' + AhkUnexpectedPidError.__name__ + '''", "expected " _pyPid " received " wParam)
+        global _pyPid, _PY_SEPARATOR 
+        return _Py_StdErr("''' + AhkUnexpectedPidError.__name__ + '''", _pyPid _PY_SEPARATOR wParam)
     }
     
     _Py_MsgCopyData(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
@@ -311,16 +323,16 @@ class Script:
         if err:
             name, args = err.split(Script.SEPARATOR, 1)
             exception_class = next((ex for ex in chain(AhkError.__subclasses__(), AhkException.__subclasses__(), (AhkException,)) if ex.__name__ == name), None)
-            warning_class = next((w for w in chain(AhkWarning.__subclasses__(), (AhkWarning,)) if w.__name__ == name), None)
             if exception_class:
-                if exception_class is AhkUserException:
-                    raise AhkUserException(*args.split(Script.SEPARATOR))
-                    user_exception.file = self.file or user_exception.file
-                    user_exception.line -= Script.CORE.count('\n')
-                    raise user_exception
-                raise exception_class(args)
+                exception = exception_class(*args.split(Script.SEPARATOR))
+                if isinstance(exception, AhkUserException):
+                    exception.file = self.file or exception.file
+                    exception.line -= Script.CORE.count('\n')
+                raise exception
+            warning_class = next((w for w in chain(AhkWarning.__subclasses__(), (AhkWarning,)) if w.__name__ == name), None)
             if warning_class:
-                warn(warning_class(args))
+                warning = warning_class(*args.split(Script.SEPARATOR))
+                warn(warning, stacklevel=4)
         return out
 
     def _send_message(self, msg: int, lparam: bytes = None) -> None:
@@ -348,7 +360,7 @@ class Script:
                 raise AhkUnsupportedValueError(val)
             val_str = f'{val:.6f}'  # 6 decimal precision to match AutoHotkey
             if float(val_str) != val:
-                warn(AhkLossOfPrecisionWarning(f'loss of precision from {val} to {val_str}'))
+                warn(AhkLossOfPrecisionWarning(val, val_str), stacklevel=6)
             val_str = val_str.rstrip('0').rstrip('.')  # less text to send the better
         else:
             if isinstance(val, str):
