@@ -12,9 +12,8 @@ import time
 from itertools import chain
 from pathlib import Path
 from subprocess import TimeoutExpired
-from typing import ClassVar, Mapping, Optional, Sequence, Union
+from typing import ClassVar, Mapping, Optional, Sequence, Tuple, Union
 from warnings import warn
-from win32api import OutputDebugString
 
 import win32api
 import win32con
@@ -43,11 +42,6 @@ class AhkLossOfPrecisionWarning(AhkWarning):
         super().__init__(f'loss of precision from {val} to {val_str}')
 
 
-class AhkNewlineReplacementWarning(AhkWarning):
-    def __init__(self, _: str):
-        super().__init__(r"'\r\n' and '\r' have been replaced with '\n' in result")
-
-
 class AhkUserException(AhkException):
     def __init__(self, message: str, what: str, extra: str, file: str, line: Union[str, int]):
         self.message: str = message
@@ -70,8 +64,15 @@ class Script:
     MSG_SET: ClassVar[int] = 0x8002
     MSG_F: ClassVar[int] = 0x8003
     MSG_F_MAIN: ClassVar[int] = 0x8004
+    MSG_MORE: ClassVar[int] = 0x8005
+
     SEPARATOR: ClassVar[str] = '\3'
-    END: ClassVar[str] = SEPARATOR + SEPARATOR
+    EOM_MORE: ClassVar[str] = SEPARATOR * 2
+    EOM_END: ClassVar[str] = SEPARATOR * 3
+
+    BUFFER_SIZE: ClassVar[int] = 4096
+    BUFFER_W_MORE_SIZE: ClassVar[int] = BUFFER_SIZE - len(EOM_MORE) * 2 - len('\n')
+    BUFFER_W_END_SIZE: ClassVar[int] = BUFFER_SIZE - len(EOM_END) * 2 - len('\n')
 
     CORE: ClassVar[str] = '''
     _pyUserBatchLines := A_BatchLines
@@ -81,43 +82,49 @@ class Script:
     #Persistent
     SetWorkingDir, ''' + str(DIR_PATH) + '''
     _PY_SEPARATOR := ''' + f'Chr({ord(SEPARATOR)})' + '''
-    _PY_END := _PY_SEPARATOR _PY_SEPARATOR
-    _pyStdOut := FileOpen("*", "w", "utf-8-raw")
-    _pyStdErr := FileOpen("**", "w", "utf-8-raw")
+    _pyStdOut := FileOpen("*", "w", "utf-16-raw")
+    _pyStdErr := FileOpen("**", "w", "utf-16-raw")
     
-    ; we can't peek() stdout/stderr, so always write to both so we don't hang waiting to read nothing
-    _Py_Response(ByRef outText, ByRef errText, ByRef onMain := False) {
-        global _pyData, _pyStdOut, _pyStdErr, _PY_SEPARATOR, _PY_END
+    _Py_Response(ByRef pipe, ByRef text, ByRef offset, ByRef onMain) {
+        textSize := Max(StrLen(text) * 2 + StrLen(Chr(0)) * 2 - offset, 0)
+        isEnd := onMain or textSize <= ''' + str(BUFFER_W_END_SIZE) + '''
+        ;MsgBox % "offset: " offset " textSize: " textSize " isEnd: " isEnd
         
-        if (not onMain) {
-            ; script hangs on WriteLine without this; flushing in batches won't work
-            if (StrPut(outText _PY_END "`n", "utf-8") > 4096 or StrPut(errText _PY_END "`n", "utf-8") > 4096) {
-                _pyData.Push(errText)
-                _pyData.Push(outText)
-                SetTimer, _Py_Response_Main, -1
-                return 1
-            }
-        }
-        
-        _pyStdOut.WriteLine(outText _PY_END)
-        _pyStdOut.Read(0)
-        
-        if (!errText && InStr(outText, Chr(13)))
-            _pyStdErr.WriteLine("''' + AhkNewlineReplacementWarning.__name__ + r'''" _PY_SEPARATOR "" _PY_END)''' + '''
+        pipe.RawWrite(&text + offset, isEnd ? textSize : ''' + str(BUFFER_W_MORE_SIZE) + ''')
+        if (isEnd)
+            pipe.Write(''' + ' '.join(f'Chr({ord(c)})' for c in EOM_END) + ''')
         else
-            _pyStdErr.WriteLine(errText _PY_END)
-        _pyStdErr.Read(0)
+            pipe.Write(''' + ' '.join(f'Chr({ord(c)})' for c in EOM_MORE) + ''')
+        newLine := "`n"
+        pipe.RawWrite(newLine, 1)  ; must be a single byte for Python's readline()
+        pipe.Read(0)
+    }
+  
+    _Py_MsgMore(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
+        global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset, _pyPid
+        SetBatchLines, -1
+        if (wParam != _pyPid)
+            return _Py_UnexpectedPidError(wParam)
+       
+        numRead := ''' + str(BUFFER_W_MORE_SIZE) + '''
+        _Py_Response(_pyStdOut, _pyOutText, _pyOutOffset += numRead, False)
+        _Py_Response(_pyStdErr, _pyErrText, _pyErrOffset += numRead, False)
         return 1
     }
-    
-    _Py_StdOut(ByRef text, ByRef onMain := False) {
-        return _Py_Response(text, "", onMain)
+     
+    ; we can't peek() stdout/stderr, so always write to both or we will over-read and hang waiting
+    _Py_StdOut(ByRef outText, ByRef onMain := False) {
+        global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset
+        _Py_Response(_pyStdOut, _pyOutText := outText, _pyOutOffset := 0, onMain)
+        _Py_Response(_pyStdErr, _pyErrText := "", _pyErrOffset := 0, onMain)
+        return 1
     }
-    
-    _Py_StdErr(ByRef name, ByRef text, onMain := False) {
-        global _pyData, _PY_SEPARATOR
+    _Py_StdErr(ByRef name, ByRef errText, onMain := False) {
+        global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset, _pyData, _PY_SEPARATOR
         _pyData := []
-        return _Py_Response("", name _PY_SEPARATOR text, onMain)
+        _Py_Response(_pyStdOut, _pyOutText := "", _pyOutOffset := 0, onMain)
+        _Py_Response(_pyStdErr, _pyErrText := name _PY_SEPARATOR errText, _pyErrOffset := 0, onMain)
+        return 1
     }
     
     _Py_UnexpectedPidError(ByRef wParam) {
@@ -225,6 +232,7 @@ class Script:
     OnMessage(''' + str(MSG_SET) + ''', Func("_Py_MsgSet"))
     OnMessage(''' + str(MSG_F) + ''', Func("_Py_MsgF"))
     OnMessage(''' + str(MSG_F_MAIN) + ''', Func("_Py_MsgF_Main"))
+    OnMessage(''' + str(MSG_MORE) + ''', Func("_Py_MsgMore"))
     
     _Py_StdOut(A_ScriptHwnd)
     
@@ -238,11 +246,6 @@ class Script:
     _Py_MsgF_Main:
         SetBatchLines, -1
         _Py_MsgF(_pyData.Pop(), _pyData.Pop(), _pyData.Pop(), _pyData.Pop(), True)
-    return
-    
-    _Py_Response_Main:
-        SetBatchLines, -1
-        _Py_Response(_pyData.Pop(), _pyData.Pop(), True)
     return
     '''
 
@@ -288,10 +291,9 @@ class Script:
 
         self.cmd = [str(ahk_path), "/CP65001", "*"]
         # must pipe all three within a PyInstaller bundled exe
-        # text=True is a better alias for universal_newlines=True but requires newer Python
-        self.popen = subprocess.Popen(self.cmd, executable=str(ahk_path), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', universal_newlines=True)
-        self.popen.stdin.write(Script.CORE)
-        self.popen.stdin.write(self.script)
+        self.popen = subprocess.Popen(self.cmd, bufsize=Script.BUFFER_SIZE, executable=str(ahk_path), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.popen.stdin.write(Script.CORE.encode('utf-8'))
+        self.popen.stdin.write(self.script.encode('utf-8'))
         self.popen.stdin.close()
 
         self.hwnd = int(self._read_response(), 16)
@@ -310,18 +312,42 @@ class Script:
         script.file = path  # for exceptions
         return script
 
-    def _read_response(self) -> str:
-        end = f"{Script.END}\n"
-        out, err = "", ""
-        while out == "" or not out.endswith(end):
-            out += self.popen.stdout.readline()
-        while err == "" or not err.endswith(end):
-            err += self.popen.stderr.readline()
-        out, err = out[:-len(end)], err[:-len(end)]
-        # OutputDebugString(f"Out: '{out}' Err: '{err}"
+    def _read_pipes(self) -> Tuple[str, str]:
+        more = bytes(Script.EOM_MORE, 'utf-16-le') + b'\n'
+        end = bytes(Script.EOM_END, 'utf-16-le') + b'\n'
 
+        err, out = bytearray(), bytearray()
+        while True:
+            def has_all(bytearray_: bytearray) -> bool:
+                return bytearray_.endswith(end) or bytearray_.endswith(more)
+
+            # we're careful not to over-read into the next response,
+            # but we can at least go by line since we end with \n
+            err_buffer, out_buffer = bytearray(), bytearray()
+            while not has_all(out_buffer):
+                out_buffer += self.popen.stdout.readline()    # reads to a *single* '\0d' byte
+            while not has_all(err_buffer):                  # a utf-16 newline '\0d\00' would be split
+                err_buffer += self.popen.stderr.readline()    # with '\00' starting the next response
+
+            is_end = out_buffer.endswith(end) and err_buffer.endswith(end)
+
+            def strip_eom(buffer) -> str:
+                head, sep, tail = buffer.rpartition(end)
+                return head if sep else buffer.rpartition(more)[0]
+
+            err += strip_eom(err_buffer)
+            out += strip_eom(out_buffer)
+
+            if is_end:
+                break
+            self._send_message(Script.MSG_MORE)
+        return (err.decode('utf-16-le')), (out.decode('utf-16-le'))
+
+    def _read_response(self) -> str:
+        err, out = self._read_pipes()
         if err:
             name, args = err.split(Script.SEPARATOR, 1)
+
             exception_class = next((ex for ex in chain(AhkError.__subclasses__(), AhkException.__subclasses__(), (AhkException,)) if ex.__name__ == name), None)
             if exception_class:
                 exception = exception_class(*args.split(Script.SEPARATOR))
@@ -329,10 +355,12 @@ class Script:
                     exception.file = self.file or exception.file
                     exception.line -= Script.CORE.count('\n')
                 raise exception
+
             warning_class = next((w for w in chain(AhkWarning.__subclasses__(), (AhkWarning,)) if w.__name__ == name), None)
             if warning_class:
                 warning = warning_class(*args.split(Script.SEPARATOR))
                 warn(warning, stacklevel=4)
+
         return out
 
     def _send_message(self, msg: int, lparam: bytes = None) -> None:

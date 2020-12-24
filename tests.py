@@ -1,5 +1,8 @@
 import itertools
 import math
+import random
+import sys
+import timeit
 from functools import partial
 from pathlib import Path
 
@@ -13,8 +16,13 @@ from autohotkey import Script
 ahk = Script.from_file(Path('tests.ahk'))
 echo = partial(ahk.f, 'Echo')
 echo_main = partial(ahk.f_main, 'Echo')
-echo(0.3333333333)
-echo("abc\rdef")
+
+# setup = r'''
+# from autohotkey import Script
+# ahk = Script('Echo(val) {\nreturn % val\n}')
+# '''
+# print(timeit.timeit("ahk.f('Echo', [' '] * 5000)", setup=setup, number=100))
+# print(timeit.timeit("ahk.f_main('Echo', [' '] * 5000)", setup=setup, number=100))
 
 
 @given(st.sampled_from([ahk.f, ahk.f_main]))
@@ -68,9 +76,27 @@ def test_str(func, str_):
     if '\0' in str_ or Script.SEPARATOR in str_:
         with pytest.raises(autohotkey.AhkUnsupportedValueError):
             func(str_)
-    elif '\r' in str_:
-        with pytest.warns(autohotkey.AhkNewlineReplacementWarning):
-            ahk_str = str_.replace('\r\n', '\n').replace('\r', '\n')
-            assert func(str_, coerce_type=False) == ahk_str
     else:
         assert func(str_, coerce_type=False) == str_
+@pytest.mark.filterwarnings('error')
+@given(result_funcs, st.text())
+def test_text(func, text):
+    try:
+        assert func(text, coerce_type=False) == text
+    except (autohotkey.AhkWarning, autohotkey.AhkUnsupportedValueError):
+        return
+
+
+@pytest.mark.filterwarnings("error")
+@given(result_funcs, st.text())
+def test_long_text(func, text):
+    try:
+        assert func(text, coerce_type=False) == text
+    except (autohotkey.AhkWarning, autohotkey.AhkUnsupportedValueError):
+        return
+
+    rand_len = random.randint(2000, 4000)
+    # ahk.call('Copy', f"{repr(text)} * {rand_len}")
+    long_text = text * rand_len
+    # print(len(long_text), file=sys.stderr)
+    assert func(long_text, coerce_type=False) == long_text

@@ -7,3 +7,7 @@ Echo(val) {
 GetSmile() {
     return "🙂"
 }
+
+Copy(val) {
+    Clipboard := val
+}
