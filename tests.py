@@ -14,8 +14,6 @@ import autohotkey
 from autohotkey import Script
 
 ahk = Script.from_file(Path('tests.ahk'))
-echo = partial(ahk.f, 'Echo')
-echo_main = partial(ahk.f_main, 'Echo')
 
 # setup = r'''
 # from autohotkey import Script
@@ -36,9 +34,13 @@ def test_missing_func(func):
         func('BadFunc')
 
 
-def set_get(val, coerce_type=True):
+echo = partial(ahk.f, 'Echo')
+echo_main = partial(ahk.f_main, 'Echo')
+
+
+def set_get(val):
     ahk.set('myVar', val)
-    return ahk.get('myVar', coerce_type=coerce_type)
+    return ahk.get('myVar')
 
 
 result_funcs = st.sampled_from([echo, echo_main, set_get])
@@ -68,30 +70,42 @@ def test_float(func, float_):
             assert func(float_) == float_
 
 
+echo_raw = partial(ahk.f_raw, 'Echo')
+echo_raw_main = partial(ahk.f_raw_main, 'Echo')
+
+
+def set_get_raw(val):
+    ahk.set('myVar', val)
+    return ahk.get_raw('myVar')
+
+
+raw_result_funcs = st.sampled_from([echo_raw, echo_raw_main, set_get_raw])
 newlines = [''.join(x) for x in itertools.product('a\n\r', repeat=3)]
 
 
-@given(result_funcs, st.one_of(st.from_type(str), st.sampled_from(newlines)))
+@given(raw_result_funcs, st.one_of(st.from_type(str), st.sampled_from(newlines)))
 def test_str(func, str_):
     if '\0' in str_ or Script.SEPARATOR in str_:
         with pytest.raises(autohotkey.AhkUnsupportedValueError):
             func(str_)
     else:
-        assert func(str_, coerce_type=False) == str_
+        assert func(str_) == str_
+
+
 @pytest.mark.filterwarnings('error')
-@given(result_funcs, st.text())
+@given(raw_result_funcs, st.text())
 def test_text(func, text):
     try:
-        assert func(text, coerce_type=False) == text
+        assert func(text) == text
     except (autohotkey.AhkWarning, autohotkey.AhkUnsupportedValueError):
         return
 
 
 @pytest.mark.filterwarnings("error")
-@given(result_funcs, st.text())
+@given(raw_result_funcs, st.text())
 def test_long_text(func, text):
     try:
-        assert func(text, coerce_type=False) == text
+        assert func(text) == text
     except (autohotkey.AhkWarning, autohotkey.AhkUnsupportedValueError):
         return
 
@@ -99,4 +113,4 @@ def test_long_text(func, text):
     # ahk.call('Copy', f"{repr(text)} * {rand_len}")
     long_text = text * rand_len
     # print(len(long_text), file=sys.stderr)
-    assert func(long_text, coerce_type=False) == long_text
+    assert func(long_text) == long_text

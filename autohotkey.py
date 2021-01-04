@@ -399,23 +399,28 @@ class Script:
             val_str = str(val)
         return f"{type(val).__name__[:5]:<5} {val_str}"
 
-    def _f(self, msg: int, name: str, *args: Primitive, need_result: bool) -> Optional[str]:
+    def _f(self, msg: int, name: str, *args: Primitive, need_result: bool, coerce_result: bool = False) -> Optional[str]:
         self._send(msg, [name, need_result] + list(args))
-        return self._read_response()
+        response = self._read_response()
+        return self._from_ahk_str(response) if coerce_result else response
 
     def call(self, name: str, *args: Primitive) -> None:
         self._f(Script.MSG_F, name, *args, need_result=False)
 
-    def f(self, name: str, *args: Primitive, coerce_type: bool = True) -> Primitive:
-        response = self._f(Script.MSG_F, name, *args, need_result=True)
-        return self._from_ahk_str(response) if coerce_type else response
-
     def call_main(self, name: str, *args: Primitive) -> None:
         self._f(Script.MSG_F_MAIN, name, *args, need_result=False)
 
-    def f_main(self, name: str, *args: Primitive, coerce_type: bool = True) -> Primitive:
-        response = self._f(Script.MSG_F_MAIN, name, *args, need_result=True)
-        return self._from_ahk_str(response) if coerce_type else response
+    def f_raw(self, name: str, *args: Primitive) -> str:
+        return self._f(Script.MSG_F, name, *args, need_result=True)
+
+    def f_raw_main(self, name: str, *args: Primitive) -> str:
+        return self._f(Script.MSG_F_MAIN, name, *args, need_result=True)
+
+    def f(self, name: str, *args: Primitive) -> Primitive:
+        return self._f(Script.MSG_F, name, *args, need_result=True, coerce_result=True)
+
+    def f_main(self, name: str, *args: Primitive) -> Primitive:
+        return self._f(Script.MSG_F_MAIN, name, *args, need_result=True, coerce_result=True)
 
     @staticmethod
     def _from_ahk_str(str_: str) -> Primitive:
@@ -433,10 +438,13 @@ class Script:
             return float(str_)
         return str_
 
-    def get(self, name: str, coerce_type: bool = True) -> Primitive:
+    def get_raw(self, name: str) -> str:
         self._send(Script.MSG_GET, [name])
-        response = self._read_response()
-        return Script._from_ahk_str(response) if coerce_type else response
+        return self._read_response()
+
+    def get(self, name: str) -> Primitive:
+        self._send(Script.MSG_GET, [name])
+        return Script._from_ahk_str(self._read_response())
 
     def set(self, name: str, val: Primitive) -> None:
         self._send(Script.MSG_SET, [name, val])
