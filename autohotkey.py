@@ -263,6 +263,13 @@ class Script:
             execute_from_dir = Path(execute_from)
             assert execute_from_dir.is_dir()
             ahk_into_folder = execute_from_dir / ahk_path.name
+
+            try:
+                if os.path.getmtime(ahk_into_folder) != os.path.getmtime(ahk_path):
+                    os.remove(ahk_into_folder)
+            except FileNotFoundError:
+                pass
+
             try:
                 os.link(ahk_path, ahk_into_folder)
             except FileExistsError:
@@ -289,6 +296,8 @@ class Script:
         win32job.AssignProcessToJobObject(self.job, handle)
         win32api.CloseHandle(handle)
 
+        # user script exceptions are already caught and sent to stderr, so /ErrorStdOut would only affect debugging CORE
+        # self.cmd = [str(ahk_path), "/ErrorStdOut=utf-16-raw", "/CP65001", "*"]
         self.cmd = [str(ahk_path), "/CP65001", "*"]
         # must pipe all three within a PyInstaller bundled exe
         self.popen = subprocess.Popen(self.cmd, bufsize=Script.BUFFER_SIZE, executable=str(ahk_path), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
