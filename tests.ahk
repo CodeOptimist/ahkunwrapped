@@ -15,12 +15,16 @@ HasUtf16Internals() {
     return True
 }
 
-Echo(val) {
-    return val
-}
-
 GetSmile() {
     return "🙂"
+}
+
+UserException() {
+    throw Exception("UserException", "example what", "example extra")
+}
+
+Echo(val) {
+    return val
 }
 
 Copy(val) {

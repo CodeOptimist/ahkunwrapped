@@ -3,7 +3,9 @@ import math
 import random
 import sys
 import timeit
+import warnings
 from functools import partial
+from inspect import currentframe, getframeinfo
 from pathlib import Path
 
 import hypothesis.strategies as st
@@ -36,6 +38,35 @@ def test_smile(func):
 def test_missing_func(func):
     with pytest.raises(autohotkey.AhkFuncNotFoundError):
         func('BadFunc')
+
+
+def test_user_exception():
+    try:
+        ahk.call('UserException')
+    except autohotkey.AhkUserException as e:
+        assert e.message == "UserException"
+        assert e.what == "example what"
+        assert e.extra == "example extra"
+        assert e.file == ahk.file
+        line_num = 1 + next(num for (num, line) in enumerate(ahk.script.split('\n')) if line.startswith('    throw Exception("UserException"'))
+        assert e.line == line_num
+
+
+# if fail, adjust its stacklevel=
+def test_warning_lineno():
+    with warnings.catch_warnings(record=True) as w:
+        ahk.call('_Py_StdErr', autohotkey.AhkWarning.__name__, "some generic warning")  # get directly because unused atm
+        assert w[0].filename == getframeinfo(currentframe()).filename and w[0].lineno == currentframe().f_lineno - 1
+        # eat the redundant output from call() finishing
+        ahk.popen.stdout.readline()
+        ahk.popen.stderr.readline()
+
+
+# if fail, adjust its stacklevel=
+def test_precision_warning_lineno():
+    with warnings.catch_warnings(record=True) as w:
+        echo(1 / 3)  # AhkLossOfPrecisionWarning
+        assert w[0].filename == getframeinfo(currentframe()).filename and w[0].lineno == currentframe().f_lineno - 1
 
 
 echo = partial(ahk.f, 'Echo')
