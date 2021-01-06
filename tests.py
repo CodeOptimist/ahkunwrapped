@@ -23,6 +23,10 @@ ahk = Script.from_file(Path('tests.ahk'))
 # print(timeit.timeit("ahk.f_main('Echo', [' '] * 5000)", setup=setup, number=100))
 
 
+def test_utf16_internals():
+    assert ahk.f('HasUtf16Internals')
+
+
 @given(st.sampled_from([ahk.f, ahk.f_main]))
 def test_smile(func):
     assert func('GetSmile') == '🙂'
