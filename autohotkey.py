@@ -276,8 +276,8 @@ class Script:
 
         if err:
             name, text = tuple(map(str, err.split(Script.SEPARATOR)))
-            exception_class = next((ex for ex in chain(AhkError.__subclasses__(), AhkException.__subclasses__()) if ex.__name__ == name), None)
-            warning_class = next((w for w in AhkWarning.__subclasses__() if w.__name__ == name), None)
+            exception_class = next((ex for ex in chain(AhkError.__subclasses__(), AhkException.__subclasses__(), (AhkException,)) if ex.__name__ == name), None)
+            warning_class = next((w for w in chain(AhkWarning.__subclasses__(), (AhkWarning,)) if w.__name__ == name), None)
             if exception_class:
                 raise exception_class(text)
             if warning_class:
