@@ -1,4 +1,7 @@
 #SingleInstance, force
+#Warn
+NoWarn:
+return
 
 Echo(val) {
     return val
