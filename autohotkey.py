@@ -49,7 +49,7 @@ class Script:
     #NoTrayIcon
     #Persistent
     SetWorkingDir, ''' + DIR_PATH + '''
-    ; _PY_SEPARATOR assignment is prepended to core below
+    _PY_SEPARATOR := ''' + f'Chr({ord(SEPARATOR)})' + '''
     _PY_END := _PY_SEPARATOR _PY_SEPARATOR
     _pyStdOut := FileOpen("*", "w", "utf-8-raw")
     _pyStdErr := FileOpen("**", "w", "utf-8-raw")
@@ -219,11 +219,8 @@ class Script:
     '''
 
     def __init__(self, script: str = "", ahk_path: str = None, execute_from: str = None) -> None:
+        self.script = script
         self.pid = os.getpid()
-
-        self.script = f"_PY_SEPARATOR := Chr({ord(Script.SEPARATOR)})"
-        self.script += Script.CORE
-        self.script += script
 
         if ahk_path is None:
             lib_path = os.path.join(DIR_PATH, r'lib\AutoHotkey\AutoHotkey.exe')
@@ -251,6 +248,7 @@ class Script:
         # text=True is a better alias for universal_newlines=True but requires newer Python
         self.popen = subprocess.Popen(self.cmd, executable=ahk_path, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', universal_newlines=True)
         atexit.register(self.exit)
+        self.popen.stdin.write(Script.CORE)
         self.popen.stdin.write(self.script)
         self.popen.stdin.close()
 
