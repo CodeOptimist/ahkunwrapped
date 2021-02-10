@@ -252,6 +252,11 @@ class Script:
         SetBatchLines, -1
         _Py_MsgF(_pyData.Pop(), _pyData.Pop(), _pyData.Pop(), _pyData.Pop(), True)
     return
+    
+    ; an unused label so #Warn won't complain that the user script's auto-execute section is unreachable
+    ; it is intentionally unreachable (we use AutoExec() instead) so standalone scripts can run exclusive code
+    _Py_SuppressUnreachableWarning:
+    AutoTrim, % A_AutoTrim          ; does nothing and never called, but makes label happy
     '''
 
     def __init__(self, script: str = "", ahk_path: Path = None, execute_from: Path = None) -> None:

@@ -1,7 +1,6 @@
 ; Copyright (C) 2019, 2020, 2021  Christopher S. Galpin.  Licensed under AGPL-3.0-or-later.  See /NOTICE.
 #SingleInstance, force
 #Warn
-NoWarn:
 return
 
 HasUtf16Internals() {
