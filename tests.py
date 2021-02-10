@@ -31,8 +31,8 @@ def test_utf16_internals():
 
 
 @given(st.sampled_from([ahk.f, ahk.f_main]))
-def test_smile(func):
-    assert func('GetSmile') == '🙂'
+def test_smile(f):
+    assert f('GetSmile') == '🙂'
 
 
 @given(st.sampled_from([ahk.call, ahk.call_main, ahk.f, ahk.f_main]))
@@ -83,27 +83,27 @@ result_funcs = st.sampled_from([echo, echo_main, set_get])
 
 
 @given(result_funcs, st.booleans())
-def test_bool(func, bool_):
-    assert func(bool_) == bool_
+def test_bool(f, bool_):
+    assert f(bool_) == bool_
 
 
 @given(result_funcs, st.integers())
-def test_int(func, int_):
-    assert func(int_) == int_
+def test_int(f, int_):
+    assert f(int_) == int_
 
 
 @given(result_funcs, st.from_type(float))
-def test_float(func, float_):
+def test_float(f, float_):
     if math.isnan(float_) or math.isinf(float_):
         with pytest.raises(autohotkey.AhkUnsupportedValueError):
-            func(float_)
+            f(float_)
     else:
         ahk_float = float(f'{float_:.6f}')
         if ahk_float != float_:
             with pytest.warns(autohotkey.AhkLossOfPrecisionWarning):
-                assert func(float_) == ahk_float
+                assert f(float_) == ahk_float
         else:
-            assert func(float_) == float_
+            assert f(float_) == float_
 
 
 echo_raw = partial(ahk.f_raw, 'Echo')
@@ -120,28 +120,28 @@ newlines = [''.join(x) for x in itertools.product('a\n\r', repeat=3)]
 
 
 @given(raw_result_funcs, st.one_of(st.from_type(str), st.sampled_from(newlines)))
-def test_str(func, str_):
+def test_str(f, str_):
     if '\0' in str_ or Script.SEPARATOR in str_:
         with pytest.raises(autohotkey.AhkUnsupportedValueError):
-            func(str_)
+            f(str_)
     else:
-        assert func(str_) == str_
+        assert f(str_) == str_
 
 
 @pytest.mark.filterwarnings('error')
 @given(raw_result_funcs, st.text())
-def test_text(func, text):
+def test_text(f, text):
     try:
-        assert func(text) == text
+        assert f(text) == text
     except (autohotkey.AhkWarning, autohotkey.AhkUnsupportedValueError):
         return
 
 
 @pytest.mark.filterwarnings("error")
 @given(raw_result_funcs, st.text())
-def test_long_text(func, text):
+def test_long_text(f, text):
     try:
-        assert func(text) == text
+        assert f(text) == text
     except (autohotkey.AhkWarning, autohotkey.AhkUnsupportedValueError):
         return
 
@@ -149,4 +149,4 @@ def test_long_text(func, text):
     # ahk.call('Copy', f"{repr(text)} * {rand_len}")
     long_text = text * rand_len
     # print(len(long_text), file=sys.stderr)
-    assert func(long_text) == long_text
+    assert f(long_text) == long_text
