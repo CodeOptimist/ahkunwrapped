@@ -18,12 +18,23 @@ from ahkunwrapped import Script
 
 ahk = Script.from_file(Path('tests.ahk'))
 
-# setup = r'''
-# from autohotkey import Script
-# ahk = Script('Echo(val) {\nreturn % val\n}')
-# '''
-# print(timeit.timeit("ahk.f('Echo', [' '] * 5000)", setup=setup, number=100))
-# print(timeit.timeit("ahk.f_main('Echo', [' '] * 5000)", setup=setup, number=100))
+
+def print_timings():
+    setup = r'''
+from ahkunwrapped import Script
+ahk = Script('Echo(val) {\nreturn val\n}')
+'''
+
+    for number in (100, 1000):
+        print(f'number={number}'.rjust(30), "1 buffer".rjust(20), "".rjust(20), "~100 buffers".rjust(20))
+        for func in ('call', 'f', 'call_main', 'f_main'):
+            single_buffer = timeit.timeit(f"ahk.{func}('Echo', ' ' * 2000)", setup=setup, number=number)
+            many_buffers = timeit.timeit(f"ahk.{func}('Echo', ' ' * 200000)", setup=setup, number=number)
+            print(f"{func}('Echo', ...)".rjust(30), f'{single_buffer:.4f}'.rjust(20), f'x {many_buffers / single_buffer:.1f} ='.rjust(20), f'{many_buffers:.4f}'.rjust(20))
+
+
+if __name__ == '__main__':
+    print_timings()
 
 
 def test_utf16_internals():
