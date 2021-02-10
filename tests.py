@@ -1,3 +1,4 @@
+# Copyright (C) 2019, 2020, 2021  Christopher S. Galpin.  Licensed under AGPL-3.0-or-later.  See /NOTICE.
 import itertools
 import math
 import random
@@ -12,8 +13,8 @@ import hypothesis.strategies as st
 import pytest
 from hypothesis import given
 
-import autohotkey
-from autohotkey import Script
+import ahkunwrapped as autohotkey
+from ahkunwrapped import Script
 
 ahk = Script.from_file(Path('tests.ahk'))
 

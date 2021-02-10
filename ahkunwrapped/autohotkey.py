@@ -1,4 +1,4 @@
-# Copyright (C) 2019, 2020  Christopher Galpin.  Licensed under AGPL-3.0-or-later.  See /NOTICE.
+# Copyright (C) 2019, 2020, 2021  Christopher S. Galpin.  Licensed under AGPL-3.0-or-later.  See /NOTICE.
 import array
 import atexit
 import math
@@ -20,7 +20,11 @@ import win32con
 import win32job
 
 # noinspection PyProtectedMember
-DIR_PATH = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).parent
+PACKAGE_PATH = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).parent
+if getattr(sys, 'frozen', False):
+    # noinspection PyProtectedMember
+    os.chdir(sys._MEIPASS)
+
 Primitive = Union[bool, float, int, str]
 
 
@@ -80,7 +84,7 @@ class Script:
     #NoEnv
     #NoTrayIcon
     #Persistent
-    SetWorkingDir, ''' + str(DIR_PATH) + '''
+    SetWorkingDir, ''' + os.getcwd() + '''
     _PY_SEPARATOR := ''' + f'Chr({ord(SEPARATOR)})' + '''
     _pyStdOut := FileOpen("*", "w", "utf-16-raw")
     _pyStdErr := FileOpen("**", "w", "utf-16-raw")
@@ -253,9 +257,7 @@ class Script:
         self.script = script
 
         if ahk_path is None:
-            lib_path = DIR_PATH / r'lib\AutoHotkey\AutoHotkey.exe'
-            prog_path = Path(os.environ.get('ProgramW6432', os.environ['ProgramFiles'])) / r'AutoHotkey\AutoHotkey.exe'
-            ahk_path = lib_path if lib_path.is_file() else prog_path if prog_path.is_file() else None
+            ahk_path = PACKAGE_PATH / r'lib\AutoHotkey\AutoHotkey.exe'
         assert ahk_path and ahk_path.is_file()
 
         # Windows notification area relies on consistent exe path
@@ -310,8 +312,6 @@ class Script:
 
     @staticmethod
     def from_file(path: Path, format_dict: Mapping[str, str] = None, ahk_path: Path = None, execute_from: Path = None) -> 'Script':
-        if not path.is_absolute():
-            path = DIR_PATH / path
         with path.open(encoding='utf-8') as f:
             script = f.read()
         if format_dict is not None:
