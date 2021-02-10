@@ -20,6 +20,15 @@ GetSmile() {
     return "🙂"
 }
 
+ComOutlookCall() {
+    comOutlook := ComObjCreate("Outlook.Application")
+}
+
+ComFsoTempName() {
+    comFso := ComObjCreate("Scripting.FileSystemObject")
+    return comFso.GetTempName()
+}
+
 UserException() {
     throw Exception("UserException", "example what", "example extra")
 }

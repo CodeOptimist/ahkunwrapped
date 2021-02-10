@@ -41,6 +41,19 @@ def test_missing_func(func):
         func('BadFunc')
 
 
+@given(st.sampled_from([ahk.call, ahk.f]), st.sampled_from([ahk.call_main, ahk.f_main]))
+def test_main_required(func, func_main):
+    with pytest.raises((autohotkey.AhkUserException, autohotkey.AhkCantCallOutInInputSyncCallError)):
+        func('ComOutlookCall')
+    func_main('ComOutlookCall')
+
+
+@given(st.sampled_from([ahk.call, ahk.call_main]), st.sampled_from([ahk.f, ahk.f_main]))
+def test_main_not_required(call, f):
+    call('ComFsoTempName')
+    assert f('ComFsoTempName').endswith('.tmp')
+
+
 def test_user_exception():
     try:
         ahk.call('UserException')
