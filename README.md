@@ -1,5 +1,5 @@
 # ahkUnwrapped
-Program in Python; use AutoHotkey for its simplification and mastery of the Windows API.
+Program in Python; use [AutoHotkey](https://www.autohotkey.com/) for its simplification and mastery of the Windows API.
 
 ## Features
 * Lightweight single module:
@@ -31,7 +31,7 @@ Each `Script` launches an _AutoHotkey.exe_ process with framework and user code 
 from ahkunwrapped import Script
 
 ahk = Script()
-isNotepadActive = ahk.f('WinActive', "Notepad")  # built-in functions are directly callable
+isNotepadActive = ahk.f('WinActive', "ahk_class Notepad")  # built-in functions are directly callable
 print(isNotepadActive)
 ```
 ---
@@ -44,7 +44,7 @@ WinMinimize(winTitle) {
 }
 ''')
 
-ahk.call('WinMinimize', "Notepad")  # built-in commands can be used from functions
+ahk.call('WinMinimize', "ahk_class Notepad")  # built-in commands can be used from functions
 ```
 ---
 ```python
