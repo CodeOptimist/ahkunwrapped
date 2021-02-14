@@ -32,6 +32,7 @@ from ahkunwrapped import Script
 
 ahk = Script()
 isNotepadActive = ahk.f('WinActive', "ahk_class Notepad")  # built-in functions are directly callable
+ahk.set('Clipboard', "Copied text!")                       # built-in variables (and user globals) can be set directly
 print(isNotepadActive)
 ```
 ---
@@ -39,12 +40,17 @@ print(isNotepadActive)
 from ahkunwrapped import Script
 
 ahk = Script('''
-WinMinimize(winTitle) {
+LuckyMinimize(winTitle) {
+  global myVar
+  myVar := 7
+  
+  Clipboard := "You minimized: " winTitle
   WinMinimize, % winTitle
 }
 ''')
 
-ahk.call('WinMinimize', "ahk_class Notepad")  # built-in commands can be used from functions
+ahk.call('LuckyMinimize', "ahk_class Notepad")  # built-in commands can be used from functions
+print("Lucky number", ahk.get('myVar'))
 ```
 ---
 ```python
