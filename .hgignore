@@ -1,9 +1,0 @@
-syntax: glob
-__pycache__/
-venv/
-.idea/
-.pytest_cache/
-.hypothesis/
-*.egg-info/
-build/
-dist/

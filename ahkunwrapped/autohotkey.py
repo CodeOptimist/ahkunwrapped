@@ -294,7 +294,7 @@ class Script:
         # if we exit, exit AutoHotkey
         atexit.register(self.exit)
 
-        # if we're killed, kill AutoHotkey
+        # if we terminate, terminate AutoHotkey
         self.job = win32job.CreateJobObject(None, "")
         extended_info = win32job.QueryInformationJobObject(self.job, win32job.JobObjectExtendedLimitInformation)
         extended_info['BasicLimitInformation']['LimitFlags'] = win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
@@ -309,6 +309,11 @@ class Script:
         self.cmd = [str(ahk_path), "/CP65001", "*"]
         # must pipe all three within a PyInstaller bundled exe
         self.popen = subprocess.Popen(self.cmd, bufsize=Script.BUFFER_SIZE, executable=str(ahk_path), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        # keep grandchild processes from inheriting job membership
+        extended_info['BasicLimitInformation']['LimitFlags'] |= win32job.JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK
+        win32job.SetInformationJobObject(self.job, win32job.JobObjectExtendedLimitInformation, extended_info)
+
         self.popen.stdin.write(Script.CORE.encode('utf-8'))
         self.popen.stdin.write(self.script.encode('utf-8'))
         self.popen.stdin.close()
@@ -468,7 +473,7 @@ class Script:
     def set(self, name: str, val: Primitive) -> None:
         self._send(Script.MSG_SET, [name, val])
 
-    # if AutoHotkey is killed, get error code
+    # if AutoHotkey is terminated, get error code
     def poll(self) -> Optional[int]:
         return self.popen.poll()
 
