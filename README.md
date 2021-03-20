@@ -31,8 +31,10 @@ Each `Script` launches an _AutoHotkey.exe_ process with framework and user code 
 from ahkunwrapped import Script
 
 ahk = Script()
-isNotepadActive = ahk.f('WinActive', "ahk_class Notepad")  # built-in functions are directly callable
-ahk.set('Clipboard', "Copied text!")                       # built-in variables (and user globals) can be set directly
+# built-in functions are directly callable
+isNotepadActive = ahk.f('WinActive', "ahk_class Notepad")
+# built-in variables (and user globals) can be set directly
+ahk.set('Clipboard', "Copied text!")
 print(isNotepadActive)
 ```
 ---
@@ -49,7 +51,8 @@ LuckyMinimize(winTitle) {
 }
 ''')
 
-ahk.call('LuckyMinimize', "ahk_class Notepad")  # built-in commands can be used from functions
+# built-in commands can be used from functions
+ahk.call('LuckyMinimize', "ahk_class Notepad")
 print("Lucky number", ahk.get('myVar'))
 ```
 ---
@@ -57,7 +60,8 @@ print("Lucky number", ahk.get('myVar'))
 from pathlib import Path
 from ahkunwrapped import Script
 
-ahk = Script.from_file(Path('my_msg.ahk'))  # load from a file
+# load from a file
+ahk = Script.from_file(Path('my_msg.ahk'))
 ahk.call('MyMsg', "Wooo!")
 ```
 
@@ -209,8 +213,8 @@ WheelUp::event = {{Event.CHOOSE_MONTH}}
 WheelDown::event = {{Event.CHOOSE_DAY}}
 ```
 
-## Example [PyInstaller spec](https://pyinstaller.readthedocs.io/en/stable/spec-files.html) (single _.exe_)
-_example.spec_:
+## PyInstaller Example (single _.exe_ or folder)
+_example.[spec](https://pyinstaller.readthedocs.io/en/stable/spec-files.html)_:
 
 ```python
 # -*- mode: python -*-
@@ -218,11 +222,46 @@ from pathlib import Path
 
 import ahkunwrapped
 
-a = Analysis(['example.py'], datas=[
-        (Path(ahkunwrapped.__file__).parent / 'lib', 'lib'),
-        ('example.ahk', '.'),
-    ]
+a = Analysis(
+  ['example.py'],
+  datas=[
+    (Path(ahkunwrapped.__file__).parent / 'lib', 'lib'),
+    ('example.ahk', '.'),
+  ]
 )
 pyz = PYZ(a.pure)
+
+# for onefile (slow to launch as it decompresses, but convenient)
 exe = EXE(pyz, a.scripts, a.binaries, a.datas, name='my-example', upx=True, console=False)
+# for onedir
+# exe = EXE(pyz, a.scripts, exclude_binaries=True, name='my-example', upx=True, console=False)
+# coll = COLLECT(exe, a.binaries, a.datas, name='my-example-folder')
+```
+
+_example.py_:
+```python
+from pathlib import Path
+
+from ahkunwrapped import Script
+
+# tray icon visibility settings rely on consistent exe paths
+LOCALAPP_DIR = Path(os.getenv('LOCALAPPDATA') / 'pyinstaller-example')
+
+# because working directory could be somewhere else
+# https://pyinstaller.readthedocs.io/en/stable/runtime-information.html
+CUR_DIR = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
+
+ahk = Script.from_file(CUR_DIR / 'example.ahk', format_dict=globals(), execute_from=LOCALAPP_DIR)
+
+# ...
+```
+
+_example.ahk_:
+```autohotkey
+AutoExec() {
+  Menu, Tray, Icon, {{CUR_DIR}}\black.ico
+  Menu, Tray, Icon  ; unhide
+}
+
+; ...
 ```

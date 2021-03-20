@@ -1,4 +1,4 @@
-# Copyright (C) 2019, 2020, 2021  Christopher S. Galpin.  Licensed under AGPL-3.0-or-later.  See /NOTICE.
+# Copyright (C) 2019-2021  Christopher S. Galpin.  Licensed under AGPL-3.0-or-later.  See /NOTICE.
 import array
 import atexit
 import math
@@ -21,10 +21,6 @@ import win32job
 
 # noinspection PyProtectedMember
 PACKAGE_PATH = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).parent
-if getattr(sys, 'frozen', False):
-    # noinspection PyProtectedMember
-    os.chdir(sys._MEIPASS)
-
 Primitive = Union[bool, float, int, str]
 
 
