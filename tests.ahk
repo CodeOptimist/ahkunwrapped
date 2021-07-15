@@ -19,8 +19,8 @@ GetSmile() {
     return "🙂"
 }
 
-ComOutlookCall() {
-    comOutlook := ComObjCreate("Outlook.Application")
+ComMsGraphCall() {
+    comMsGraph := ComObjCreate("MSGraph.Application")
 }
 
 ComFsoTempName() {

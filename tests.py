@@ -5,13 +5,14 @@ import random
 import sys
 import timeit
 import warnings
+from datetime import timedelta
 from functools import partial
 from inspect import currentframe, getframeinfo
 from pathlib import Path
 
 import hypothesis.strategies as st
 import pytest
-from hypothesis import given
+from hypothesis import given, settings
 
 import ahkunwrapped as autohotkey
 from ahkunwrapped import Script
@@ -52,11 +53,12 @@ def test_missing_func(func):
         func('BadFunc')
 
 
+@settings(deadline=timedelta(seconds=1))
 @given(st.sampled_from([ahk.call, ahk.f]), st.sampled_from([ahk.call_main, ahk.f_main]))
 def test_main_required(func, func_main):
     with pytest.raises((autohotkey.AhkUserException, autohotkey.AhkCantCallOutInInputSyncCallError)):
-        func('ComOutlookCall')
-    func_main('ComOutlookCall')
+        func('ComMsGraphCall')
+    func_main('ComMsGraphCall')
 
 
 @given(st.sampled_from([ahk.call, ahk.call_main]), st.sampled_from([ahk.f, ahk.f_main]))
