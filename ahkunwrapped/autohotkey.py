@@ -19,7 +19,7 @@ import win32api
 import win32con
 import win32job
 
-# noinspection PyProtectedMember
+# noinspection PyProtectedMember,PyUnresolvedReferences
 PACKAGE_PATH = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).parent
 Primitive = Union[bool, float, int, str]
 
@@ -256,6 +256,7 @@ class Script:
     '''
 
     def __init__(self, script: str = "", ahk_path: Path = None, execute_from: Path = None) -> None:
+        self.file = None
         self.script = script
 
         if ahk_path is None:

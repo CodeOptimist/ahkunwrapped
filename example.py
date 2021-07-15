@@ -18,6 +18,8 @@ ahk = Script.from_file(Path('example.ahk'), format_dict=globals())
 
 
 def main() -> None:
+    print("Scroll your mousewheel in Notepad.")
+
     ts = 0
     while True:
         exit_code = ahk.poll()

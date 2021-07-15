@@ -51,7 +51,7 @@ LuckyMinimize(winTitle) {
 }
 ''')
 
-# built-in commands can be used from functions
+# built-in commands can be used within functions
 ahk.call('LuckyMinimize', "ahk_class Notepad")
 print("Lucky number", ahk.get('myVar'))
 ```
@@ -88,7 +88,7 @@ Settings from [AutoExec()](https://www.autohotkey.com/docs/Scripts.htm#auto) wil
 AutoHotkey's [#Warn](https://www.autohotkey.com/docs/commands/_Warn.htm#Remarks) is special and will apply to both standalone and from-Python execution, unless you add/remove it dynamically.
 
 `call(proc, ...)` is for performance, to avoid receiving a large unneeded result.  
-`get(var)` `set(var, val)` are shorthand for global variables and [built-ins](https://www.autohotkey.com/docs/Variables.htm#BuiltIn) like `A_TimeIdle`.  
+`get(var)` `set(var, val)` are shorthand for accessing global variables and [built-ins](https://www.autohotkey.com/docs/Variables.htm#BuiltIn) like `A_TimeIdle`.  
 `f(func, ...)` `get(var)` will infer `float` and `int` (base-16 beginning with `0x`) like AutoHotkey.  
 
 `f_raw(func, ...)` `get_raw(var)` will return the raw string as-stored.  
@@ -121,6 +121,8 @@ ahk = Script.from_file(Path('example.ahk'), format_dict=globals())
 
 
 def main() -> None:
+    print("Scroll your mousewheel in Notepad.")
+  
     ts = 0
     while True:
         exit_code = ahk.poll()
@@ -235,7 +237,7 @@ pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, a.binaries, a.datas, name='my-example', upx=True, console=False)
 # for onedir
 # exe = EXE(pyz, a.scripts, exclude_binaries=True, name='my-example', upx=True, console=False)
-# coll = COLLECT(exe, a.binaries, a.datas, name='my-example-folder')
+# dir = COLLECT(exe, a.binaries, a.datas, name='my-example-folder')
 ```
 
 _example.py_:
