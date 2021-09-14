@@ -43,13 +43,15 @@ class AhkLossOfPrecisionWarning(AhkWarning):
         super().__init__(f'loss of precision from {val} to {val_str}')
 
 
+# Python 3.7: @dataclass
 class AhkUserException(AhkException):
-    def __init__(self, message: str, what: str, extra: str, file: str, line: Union[str, int]):
+    def __init__(self, from_exception_obj: str, message: str, what: str, extra: str, file: str, line: str):
+        self.from_exception_obj: bool = from_exception_obj == "1"
         self.message: str = message
         self.what: str = what
         self.extra: str = extra
         self.file: str = file
-        self.line: int = int(line)
+        self.line: str = line
 
     def __str__(self) -> str:
         # Python 3.8: return f"{message=}, {what=}, {extra=}, {file=}, {line=}"
@@ -59,8 +61,18 @@ class AhkUserException(AhkException):
         return f"{self.__class__.__name__}{self}"
 
 
+class AhkCaughtNonExceptionWarning(AhkWarning):
+    def __init__(self, exception: AhkUserException):
+        message = f"""got "throw X"; recommend "throw Exception(X)" to preserve line info.
+\tAlternatively, catch within script https://www.autohotkey.com/docs/commands/Throw.htm#Exception .
+\tException message: '{exception.message}'"""
+        if not exception.message:
+            message += "\n\tMay have been an AutoHotkey object e.g. {abc: 123} intended for use within 'catch'."
+        super().__init__(message)
+
+
 class Script:
-    # Python 3.8: use Final instead of ClassVar https://www.python.org/dev/peps/pep-0591/#id14
+    # Python 3.8: Final instead of ClassVar https://www.python.org/dev/peps/pep-0591/#id14
     MSG_GET: ClassVar[int] = 0x8001
     MSG_SET: ClassVar[int] = 0x8002
     MSG_F: ClassVar[int] = 0x8003
@@ -190,8 +202,19 @@ class Script:
         catch e {
             SetBatchLines, -1
             _pyData := []
+            
+            ; Exception() just results in a normal object; no easy way to distinguish
+            ; https://www.autohotkey.com/docs/commands/Throw.htm
+            ; https://web.archive.org/web/20201202074148/https://www.autohotkey.com/boards/viewtopic.php?t=44081
+            isExceptionObj := IsObject(e) and (e.Count() == 4 or e.Count() == 5) and e.HasKey("Message") and e.HasKey("What") and e.HasKey("File") and e.HasKey("Line")
+            if (isExceptionObj and e.Count() == 5 and !e.HasKey("Extra"))
+                isExceptionObj := False
+            
+            if (!isExceptionObj)
+                e := {Message: e}
+            
             return _Py_StdErr("''' + AhkUserException.__name__ + '''"
-                , e.Message _PY_SEPARATOR e.What _PY_SEPARATOR e.Extra _PY_SEPARATOR e.File _PY_SEPARATOR e.Line
+                , isExceptionObj _PY_SEPARATOR e.Message _PY_SEPARATOR e.What _PY_SEPARATOR e.Extra _PY_SEPARATOR e.File _PY_SEPARATOR e.Line
                 , onMain)
         }
         SetBatchLines, -1
@@ -369,12 +392,16 @@ class Script:
             if exception_class:
                 exception = exception_class(*args.split(Script.SEPARATOR))
                 if isinstance(exception, AhkUserException):
-                    exception.file = self.file or exception.file
-                    exception.line -= Script.CORE.count('\n')
-                    if exception.message == '2147549453':
-                        exception.message = 'Error:  0x8001010D - An outgoing call cannot be made since the application is dispatching an input-synchronous call.'
-                        outer_msg = 'Failed a remote procedure call from OnMessage() thread. Solve this with f_main(), call_main() or f_raw_main().'
-                        raise AhkCantCallOutInInputSyncCallError(outer_msg) from exception
+                    if exception.from_exception_obj and Script._is_num(exception.line):
+                        exception.file = self.file or exception.file
+                        exception.line = int(exception.line) - Script.CORE.count('\n')
+
+                        if exception.message == '2147549453':
+                            exception.message = 'Error:  0x8001010D - An outgoing call cannot be made since the application is dispatching an input-synchronous call.'
+                            outer_msg = 'Failed a remote procedure call from OnMessage() thread. Solve this with f_main(), call_main() or f_raw_main().'
+                            raise AhkCantCallOutInInputSyncCallError(outer_msg) from exception
+                    else:
+                        warn(AhkCaughtNonExceptionWarning(exception), stacklevel=4)
                 raise exception
 
             warning_class = next((w for w in chain(AhkWarning.__subclasses__(), (AhkWarning,)) if w.__name__ == name), None)
@@ -444,18 +471,18 @@ class Script:
         return self._f(Script.MSG_F_MAIN, name, *args, need_result=True, coerce_result=True)
 
     @staticmethod
+    def _is_num(str_: str) -> bool:
+        return str_.isdigit() or (str_.startswith('-') and str_[1:].isdigit())
+
+    @staticmethod
     def _from_ahk_str(str_: str) -> Primitive:
         is_hex = str_.startswith('0x') and all(c in string.hexdigits for c in str_[2:])
         if is_hex:
             return int(str_, 16)
 
-        # noinspection PyShadowingNames
-        def is_num(str_: str) -> bool:
-            return str_.isdigit() or (str_.startswith('-') and str_[1:].isdigit())
-
-        if is_num(str_):
+        if Script._is_num(str_):
             return int(str_.lstrip('0') or '0', 0)
-        if is_num(str_.replace('.', '', 1)):
+        if Script._is_num(str_.replace('.', '', 1)):
             return float(str_)
         return str_
 

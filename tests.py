@@ -2,6 +2,7 @@
 import itertools
 import math
 import random
+# noinspection PyUnresolvedReferences
 import sys
 import timeit
 import warnings
@@ -70,13 +71,54 @@ def test_main_not_required(call, f):
 def test_user_exception():
     try:
         ahk.call('UserException')
+        assert False
     except autohotkey.AhkUserException as e:
         assert e.message == "UserException"
         assert e.what == "example what"
         assert e.extra == "example extra"
         assert e.file == ahk.file
+
+
+def test_user_exception_lineno():
+    try:
+        ahk.call('UserException')
+        assert False
+    except autohotkey.AhkUserException as e:
         line_num = 1 + next(num for (num, line) in enumerate(ahk.script.split('\n')) if line.startswith('    throw Exception("UserException"'))
         assert e.line == line_num
+
+
+@pytest.mark.xfail
+def test_fake_exception_lineno():
+    try:
+        ahk.call('FakeException')
+        assert False
+    except autohotkey.AhkUserException as e:
+        line_num = 1 + next(num for (num, line) in enumerate(ahk.script.split('\n')) if line.startswith('    throw {Message: "FakeException"'))
+        assert e.line == line_num
+
+
+def test_non_exception_warning():
+    for i in range(1, 4):
+        with pytest.warns(autohotkey.AhkCaughtNonExceptionWarning):
+            with pytest.raises(autohotkey.AhkUserException):
+                ahk.call(f'NonException{i}')
+
+
+@pytest.mark.xfail
+def test_non_exception_warning_for_fake():
+    with pytest.warns(autohotkey.AhkCaughtNonExceptionWarning):
+        with pytest.raises(autohotkey.AhkUserException):
+            ahk.call(f'FakeException')
+
+
+# if fail, adjust its stacklevel=
+def test_non_exception_warning_lineno():
+    for i in range(1, 4):
+        with warnings.catch_warnings(record=True) as w:
+            with pytest.raises(autohotkey.AhkUserException):
+                ahk.call(f'NonException{i}')
+            assert w[0].filename == getframeinfo(currentframe()).filename and w[0].lineno == currentframe().f_lineno - 1
 
 
 # if fail, adjust its stacklevel=
@@ -89,6 +131,7 @@ def test_warning_lineno():
         ahk.popen.stderr.readline()
 
 
+# warning covered in test_float()
 # if fail, adjust its stacklevel=
 def test_precision_warning_lineno():
     with warnings.catch_warnings(record=True) as w:

@@ -32,6 +32,26 @@ UserException() {
     throw Exception("UserException", "example what", "example extra")
 }
 
+NonException1() {
+    throw 12345
+}
+
+NonException2() {
+    throw "hello"
+}
+
+NonException3() {
+    throw {abc: 123, def: "hi"}
+}
+
+NonException4() {
+    throw {Message: "example message", What: "example what", File: "some file", Line: "not a number"}
+}
+
+FakeException() {
+    throw {Message: "FakeException", What: "example what", File: "some file", Line: 9999999999}
+}
+
 Echo(val) {
     return val
 }
