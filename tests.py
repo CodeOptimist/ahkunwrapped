@@ -57,7 +57,7 @@ def test_missing_func(func):
 @settings(deadline=timedelta(seconds=1))
 @given(st.sampled_from([ahk.call, ahk.f]), st.sampled_from([ahk.call_main, ahk.f_main]))
 def test_main_required(func, func_main):
-    with pytest.raises((autohotkey.AhkUserException, autohotkey.AhkCantCallOutInInputSyncCallError)):
+    with pytest.raises(autohotkey.AhkCantCallOutInInputSyncCallError):
         func('ComMsGraphCall')
     func_main('ComMsGraphCall')
 

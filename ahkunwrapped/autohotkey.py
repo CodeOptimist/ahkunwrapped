@@ -397,7 +397,8 @@ class Script:
                         exception.line = int(exception.line) - Script.CORE.count('\n')
 
                         if exception.message == '2147549453':
-                            exception.message = 'Error:  0x8001010D - An outgoing call cannot be made since the application is dispatching an input-synchronous call.'
+                            exception.message = '0x8001010D - An outgoing call cannot be made since the application is dispatching an input-synchronous call.'
+                        if exception.message.startswith('0x8001010D - '):
                             outer_msg = 'Failed a remote procedure call from OnMessage() thread. Solve this with f_main(), call_main() or f_raw_main().'
                             raise AhkCantCallOutInInputSyncCallError(outer_msg) from exception
                     else:
