@@ -122,14 +122,11 @@ ahk = Script.from_file(Path('example.ahk'), format_dict=globals())
 
 def main() -> None:
     print("Scroll your mousewheel in Notepad.")
-  
+
     ts = 0
     while True:
-        exit_code = ahk.poll()
-        if exit_code:
-            sys.exit(exit_code)
-
         try:
+            ahk.poll()
             s_elapsed = time.time() - ts
             if s_elapsed >= 60:
                 ts = time.time()
@@ -139,9 +136,8 @@ def main() -> None:
             if event:
                 ahk.set('event', '')
                 on_event(event)
-        except AhkExitException:
-            print("Graceful exit.")
-            sys.exit(0)
+        except AhkExitException as e:
+            sys.exit(e.args[0])
         time.sleep(0.01)
 
 

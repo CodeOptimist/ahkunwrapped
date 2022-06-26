@@ -416,8 +416,7 @@ class Script:
         # this is essential because messages are ignored if uninterruptible (e.g. in menu)
         # wparam is normally source window handle, but we don't have a window
         while not win32api.SendMessage(self.hwnd, msg, self.pid, lparam):
-            if self.popen.poll() is not None:
-                raise AhkExitException()
+            self.poll()
             time.sleep(0.01)
 
     def _send(self, msg: int, data: Sequence[Primitive]) -> None:
@@ -499,15 +498,17 @@ class Script:
         self._send(Script.MSG_SET, [name, val])
 
     # if AutoHotkey is terminated, get error code
-    def poll(self) -> Optional[int]:
-        return self.popen.poll()
+    def poll(self) -> None:
+        exit_code = self.popen.poll()
+        if exit_code is not None:
+            raise AhkExitException(exit_code)
 
     def exit(self, timeout=5.0) -> None:
         try:
             self.call("_Py_ExitApp")  # clean, removes tray icons etc.
             return_code = self.popen.wait(timeout)
             if return_code:
-                raise subprocess.CalledProcessError(return_code, self.cmd)
+                raise AhkExitException(return_code)
         except AhkExitException:
             pass
         except TimeoutExpired:
