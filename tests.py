@@ -1,4 +1,4 @@
-# Copyright (C) 2019, 2020, 2021  Christopher S. Galpin.  Licensed under AGPL-3.0-or-later.  See /NOTICE.
+# Copyright (C) 2019-2022  Christopher S. Galpin.  Licensed under AGPL-3.0-or-later.  See /NOTICE.
 import itertools
 import math
 import random
@@ -88,7 +88,7 @@ def test_user_exception_lineno():
         assert e.line == line_num
 
 
-@pytest.mark.xfail
+@pytest.mark.xfail(strict=True)  # expected fail
 def test_fake_exception_lineno():
     try:
         ahk.call('FakeException')
@@ -105,7 +105,7 @@ def test_non_exception_warning():
                 ahk.call(f'NonException{i}')
 
 
-@pytest.mark.xfail
+@pytest.mark.xfail(strict=True)  # expected fail
 def test_non_exception_warning_for_fake():
     with pytest.warns(autohotkey.AhkCaughtNonExceptionWarning):
         with pytest.raises(autohotkey.AhkUserException):
@@ -206,7 +206,7 @@ def test_text(f, text):
         return
 
 
-@pytest.mark.filterwarnings("error")
+@pytest.mark.filterwarnings('error')
 @given(raw_result_funcs, st.text())
 def test_long_text(f, text):
     try:

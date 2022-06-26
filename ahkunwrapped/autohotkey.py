@@ -1,4 +1,4 @@
-# Copyright (C) 2019-2021  Christopher S. Galpin.  Licensed under AGPL-3.0-or-later.  See /NOTICE.
+# Copyright (C) 2019-2022  Christopher S. Galpin.  Licensed under AGPL-3.0-or-later.  See /NOTICE.
 import array
 import atexit
 import math
@@ -19,8 +19,10 @@ import win32api
 import win32con
 import win32job
 
+# support for PyInstaller
 # noinspection PyProtectedMember,PyUnresolvedReferences
 PACKAGE_PATH = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).parent
+
 Primitive = Union[bool, float, int, str]
 
 
@@ -43,7 +45,7 @@ class AhkLossOfPrecisionWarning(AhkWarning):
         super().__init__(f'loss of precision from {val} to {val_str}')
 
 
-# Python 3.7: @dataclass
+# Python 3.7 would use @dataclass
 class AhkUserException(AhkException):
     def __init__(self, from_exception_obj: str, message: str, what: str, extra: str, file: str, line: str):
         self.from_exception_obj: bool = from_exception_obj == "1"
@@ -54,7 +56,7 @@ class AhkUserException(AhkException):
         self.line: str = line
 
     def __str__(self) -> str:
-        # Python 3.8: return f"{message=}, {what=}, {extra=}, {file=}, {line=}"
+        # Python 3.8 would use return f"{message=}, {what=}, {extra=}, {file=}, {line=}"
         return f"(message={repr(self.message)}, what={repr(self.what)}, extra={repr(self.extra)}, file={repr(self.file)}, line={repr(self.line)})"
 
     def __repr__(self) -> str:
@@ -72,7 +74,7 @@ class AhkCaughtNonExceptionWarning(AhkWarning):
 
 
 class Script:
-    # Python 3.8: Final instead of ClassVar https://www.python.org/dev/peps/pep-0591/#id14
+    # Python 3.8 would use Final instead of ClassVar https://www.python.org/dev/peps/pep-0591/#id14
     MSG_GET: ClassVar[int] = 0x8001
     MSG_SET: ClassVar[int] = 0x8002
     MSG_F: ClassVar[int] = 0x8003
@@ -161,6 +163,7 @@ class Script:
         ; limitation of Parse and StrSplit(): separator must be a single character
         Loop, Parse, data, % _PY_SEPARATOR
         {
+            ; see Python function _to_ahk_str()
             type := RTrim(SubStr(A_LoopField, 1, 5))
             val := SubStr(A_LoopField, 7)
             ; others are automatic
@@ -182,6 +185,7 @@ class Script:
         _pyData.Push(msg)
         _pyData.Push(lParam)
         _pyData.Push(wParam)
+        ; continue on main thread at below label
         SetTimer, _Py_MsgF_Main, -1
         return 1
     }
@@ -250,7 +254,7 @@ class Script:
     _pyData := []
     _pyPid := ''' + str(os.getpid()) + '''
     
-    ; must return non-zero to signal completion
+    ; these all must return non-zero to signal completion
     OnMessage(''' + str(win32con.WM_COPYDATA) + ''', Func("_Py_MsgCopyData"))
     OnMessage(''' + str(MSG_GET) + ''', Func("_Py_MsgGet"))
     OnMessage(''' + str(MSG_SET) + ''', Func("_Py_MsgSet"))
@@ -267,13 +271,14 @@ class Script:
     _Py_StdOut("Initialized")
     return
     
+    ; from _Py_MsgF_Main()
     _Py_MsgF_Main:
         SetBatchLines, -1
         _Py_MsgF(_pyData.Pop(), _pyData.Pop(), _pyData.Pop(), _pyData.Pop(), True)
     return
     
     ; an unused label so #Warn won't complain that the user script's auto-execute section is unreachable
-    ; it is intentionally unreachable (we use AutoExec() instead) so standalone scripts can run exclusive code
+    ; it is intentionally unreachable (we use AutoExec() instead) so scripts can run exclusive standalone code
     _Py_SuppressUnreachableWarning:
     AutoTrim, % A_AutoTrim          ; does nothing and never called, but makes label happy
     '''
@@ -330,7 +335,7 @@ class Script:
         # must pipe all three within a PyInstaller bundled exe
         self.popen = subprocess.Popen(self.cmd, bufsize=Script.BUFFER_SIZE, executable=str(ahk_path), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        # keep grandchild processes from inheriting job membership
+        # keep grandchild processes from inheriting job membership above
         extended_info['BasicLimitInformation']['LimitFlags'] |= win32job.JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK
         win32job.SetInformationJobObject(self.job, win32job.JobObjectExtendedLimitInformation, extended_info)
 
@@ -362,10 +367,10 @@ class Script:
                 return bytearray_.endswith(end) or bytearray_.endswith(more)
 
             # we're careful not to over-read into the next response,
-            # but we can at least go by line since we end with \n
+            # but we can at least go line by line since we end with \n
             err_buffer, out_buffer = bytearray(), bytearray()
             while not has_all(out_buffer):
-                out_buffer += self.popen.stdout.readline()    # reads to a *single* '\0d' byte
+                out_buffer += self.popen.stdout.readline()  # reads to a *single* '\0d' byte
             while not has_all(err_buffer):                  # a utf-16 newline '\0d\00' would be split
                 err_buffer += self.popen.stderr.readline()    # with '\00' starting the next response
 
