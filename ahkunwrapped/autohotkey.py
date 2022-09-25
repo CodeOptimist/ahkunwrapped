@@ -39,11 +39,6 @@ class AhkCantCallOutInInputSyncCallError(AhkError): pass    # noqa: E701
 class AhkWarning(UserWarning): pass                         # noqa: E701
 
 
-class AhkUnexpectedPidError(AhkError):
-    def __init__(self, expected_pid: str, received: str):
-        super().__init__(f'expected {expected_pid} received {received}')
-
-
 class AhkLossOfPrecisionWarning(AhkWarning):
     def __init__(self, val: float, val_str: str):
         super().__init__(f'loss of precision from {val} to {val_str}')
@@ -121,10 +116,9 @@ class Script:
     }
   
     _Py_MsgMore(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
-        global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset, _pyPid
+        global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset
         SetBatchLines, -1
-        if (wParam != _pyPid)
-            return _Py_UnexpectedPidError(wParam)
+        ;DebugMsg(wParam, msg)
        
         numRead := ''' + str(BUFFER_W_MORE_SIZE) + '''
         _Py_Response(_pyStdOut, _pyOutText, _pyOutOffset += numRead, False)
@@ -140,23 +134,16 @@ class Script:
         return 1
     }
     _Py_StdErr(ByRef name, ByRef errText, onMain := False) {
-        global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset, _pyData, _PY_SEPARATOR
-        _pyData := []
+        global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset, _PY_SEPARATOR
         _Py_Response(_pyStdOut, _pyOutText := "", _pyOutOffset := 0, onMain)
         _Py_Response(_pyStdErr, _pyErrText := name _PY_SEPARATOR errText, _pyErrOffset := 0, onMain)
         return 1
     }
     
-    _Py_UnexpectedPidError(ByRef wParam) {
-        global _pyPid, _PY_SEPARATOR 
-        return _Py_StdErr("''' + AhkUnexpectedPidError.__name__ + '''", _pyPid _PY_SEPARATOR wParam)
-    }
-    
     _Py_MsgCopyData(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
-        global _pyData, _pyPid, _PY_SEPARATOR
+        global _pyThreadMsgData, _PY_SEPARATOR
         SetBatchLines, -1
-        if (wParam != _pyPid)
-            return _Py_UnexpectedPidError(wParam)
+        ;DebugMsg(wParam, msg)
         
         ;dataTypeId := NumGet(lParam + 0*A_PtrSize) ; unneeded atm
         dataSize := NumGet(lParam + 1*A_PtrSize)
@@ -165,6 +152,9 @@ class Script:
         data := StrGet(strAddr, dataSize, "utf-8")
         ; OutputDebug, Received: '%data%'
         
+        ; Since messages can arrive from multiple threads—e.g. clicking 'Reload' within OBS Studio 'Scripts' window,
+        ;  while a timer is also running within said script—we need to keep their input data separate.
+        _pyThreadMsgData[wParam] := []
         ; limitation of Parse and StrSplit(): separator must be a single character
         Loop, Parse, data, % _PY_SEPARATOR
         {
@@ -174,7 +164,7 @@ class Script:
             ; others are automatic
             if (type = "bool")
                 val := val == "True" ? 1 : 0    ; same as True/False
-            _pyData.Push(val)
+            _pyThreadMsgData[wParam].Push(val)
         }
         return 1
     }
@@ -182,35 +172,39 @@ class Script:
     ; call on main thread, much slower but may be necessary for DllCall() to avoid:
     ;   Error 0x8001010d An outgoing call cannot be made since the application is dispatching an input-synchronous call.
     _Py_MsgFMain(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
-        global _pyData, _pyPid
+        global _pyMsgFMainData
         SetBatchLines, -1
-        if (wParam != _pyPid)
-            return _Py_UnexpectedPidError(wParam)
-        _pyData.Push(hwnd)
-        _pyData.Push(msg)
-        _pyData.Push(lParam)
-        _pyData.Push(wParam)
+        ;DebugMsg(wParam, msg)
+            
+        _pyMsgFMainData.Push(hwnd)
+        _pyMsgFMainData.Push(msg)
+        _pyMsgFMainData.Push(lParam)
+        _pyMsgFMainData.Push(wParam)
+        ;OutputDebug, SENDING TO MAIN THREAD
         ; continue on main thread at below label
         SetTimer, _Py_MsgFMain, -1
         return 1
     }
     
     _Py_MsgF(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd, ByRef onMain := False) {
-        global _pyData, _pyPid, _pyUserBatchLines, _PY_SEPARATOR
+        global _pyThreadMsgData, _pyUserBatchLines, _PY_SEPARATOR
         SetBatchLines, -1
-        if (wParam != _pyPid)
-            return _Py_UnexpectedPidError(wParam)
-        
-        func := _pyData.RemoveAt(1)
-        if (not IsFunc(func))
+        if (not onMain) {
+            ;DebugMsg(wParam, msg)
+        }
+       
+        func := _pyThreadMsgData[wParam].RemoveAt(1)
+        if (not IsFunc(func)) {
+            _pyThreadMsgData.Delete(wParam)
             return _Py_StdErr("''' + AhkFuncNotFoundError.__name__ + '''", func, onMain)
-        needResult := _pyData.RemoveAt(1)
+        }
+        needResult := _pyThreadMsgData[wParam].RemoveAt(1)
 
         SetBatchLines, % _pyUserBatchLines
-        try result := %func%(_pyData*)
+        try result := %func%(_pyThreadMsgData[wParam]*)
         catch e {
             SetBatchLines, -1
-            _pyData := []
+            _pyThreadMsgData.Delete(wParam)
             
             ; Exception() just results in a normal object; no easy way to distinguish
             ; https://www.autohotkey.com/docs/commands/Throw.htm
@@ -226,29 +220,29 @@ class Script:
                 , isExceptionObj _PY_SEPARATOR e.Message _PY_SEPARATOR e.What _PY_SEPARATOR e.Extra _PY_SEPARATOR e.File _PY_SEPARATOR e.Line
                 , onMain)
         }
-        SetBatchLines, -1
-        _pyData := []
         
+        SetBatchLines, -1
+        _pyThreadMsgData.Delete(wParam)
         return _Py_StdOut(needResult ? result : "", onMain)
     }
     
     _Py_MsgGet(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         local name, val
         SetBatchLines, -1
-        if (wParam != _pyPid)
-            return _Py_UnexpectedPidError(wParam)
-        name := _pyData.RemoveAt(1)
+        ;DebugMsg(wParam, msg)
+        name := _pyThreadMsgData[wParam].RemoveAt(1)
         val := %name%
+        _pyThreadMsgData.Delete(wParam)
         return _Py_StdOut(val)
     }
     
     _Py_MsgSet(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         local name
         SetBatchLines, -1
-        if (wParam != _pyPid)
-            return _Py_UnexpectedPidError(wParam)
-        name := _pyData.RemoveAt(1)
-        %name% := _pyData.RemoveAt(1)
+        ;DebugMsg(wParam, msg)
+        name := _pyThreadMsgData[wParam].RemoveAt(1)
+        %name% := _pyThreadMsgData[wParam].RemoveAt(1)
+        _pyThreadMsgData.Delete(wParam)
         return 1
     }
     
@@ -257,8 +251,13 @@ class Script:
         return 1 ; required even after ExitApp
     }
     
-    _pyData := []
-    _pyPid := ''' + str(os.getpid()) + '''
+    DebugMsg(wParam, msg) {
+        OutputDebug, % Format("msg {:#06x}\t\tthread {:#05} -> {:#05}\t\tprocess {:#05} -> {:#05}"
+            , msg, wParam, DllCall("GetCurrentThreadId"), ''' + str(os.getpid()) + ''', DllCall("GetCurrentProcessId"))
+    }
+    
+    _pyThreadMsgData := {}
+    _pyMsgFMainData := []
     
     ; these all must return non-zero to signal completion
     OnMessage(''' + str(win32con.WM_COPYDATA) + ''', Func("_Py_MsgCopyData"))
@@ -281,7 +280,8 @@ class Script:
     ; from _Py_MsgFMain()
     _Py_MsgFMain:
         SetBatchLines, -1
-        _Py_MsgF(_pyData.Pop(), _pyData.Pop(), _pyData.Pop(), _pyData.Pop(), True)
+        ;OutputDebug, RECEIVED IN MAIN THREAD
+        _Py_MsgF(_pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), True)
     return
     
     ; an unused label so #Warn won't complain that the user script's auto-execute section is unreachable
@@ -428,16 +428,18 @@ class Script:
 
         return out
 
+    # https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendmessage
     def _send_message(self, msg: int, lparam: bytes = None) -> None:
         # this is essential because messages are ignored if uninterruptible (e.g. in menu)
-        # wparam is normally source window handle, but we don't have a window
-        while not win32api.SendMessage(self.hwnd, msg, self.pid, lparam):
+        # wparam is normally source window handle, but in our case source thread id
+        while not win32api.SendMessage(self.hwnd, msg, threading.get_ident(), lparam):
             self.poll()
             time.sleep(0.01)
 
     def _send(self, msg: int, data: Sequence[Primitive]) -> None:
         data_str = Script.SEPARATOR.join(Script._to_ahk_str(v) for v in data)
         # OutputDebugString(f"Sent: {data}")
+        # https://learn.microsoft.com/en-us/windows/win32/dataxchg/wm-copydata
         char_buffer = array.array('b', bytes(data_str, 'utf-8'))
         addr, size = char_buffer.buffer_info()
         data_type_id = msg  # anything; unneeded atm
