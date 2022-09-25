@@ -222,3 +222,11 @@ def test_long_text(f, text):
     long_text = text * rand_len
     # print(len(long_text), file=sys.stderr)
     assert f(long_text) == long_text
+
+
+# At > 100 Scripts:
+# >       win32job.AssignProcessToJobObject(self.job, handle)
+# E       pywintypes.error: (50, 'AssignProcessToJobObject', 'The request is not supported.')
+def test_job_script_limit():
+    for _ in range(101):
+        Script()

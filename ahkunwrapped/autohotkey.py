@@ -321,18 +321,21 @@ class Script:
                     shutil.copyfile(ahk_path, ahk_into_folder)
             ahk_path = ahk_into_folder
 
-        self.pid = os.getpid()
-
         # if we exit, exit AutoHotkey
         atexit.register(self.on_python_exit)
 
-        # if we terminate, terminate AutoHotkey
-        self.job = win32job.CreateJobObject(None, "")
+        python_pid = os.getpid()
+        #  https://learn.microsoft.com/en-gb/windows/win32/api/winbase/nf-winbase-createjobobjecta
+        # Supplying a name here prevents the following after creating 100 Scripts:
+        #   pywintypes.error: (50, 'AssignProcessToJobObject', 'The request is not supported.')
+        # self.job = win32job.CreateJobObject(None, "")
+        self.job = win32job.CreateJobObject(None, f"ahkUnwrapped:{python_pid}")  # just to be descriptive, pid doesn't change
         extended_info = win32job.QueryInformationJobObject(self.job, win32job.JobObjectExtendedLimitInformation)
+        # if we terminate, terminate AutoHotkey
         extended_info['BasicLimitInformation']['LimitFlags'] = win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
         win32job.SetInformationJobObject(self.job, win32job.JobObjectExtendedLimitInformation, extended_info)
         # add ourselves and subprocess will inherit job membership
-        handle = win32api.OpenProcess(win32con.PROCESS_TERMINATE | win32con.PROCESS_SET_QUOTA, False, self.pid)
+        handle = win32api.OpenProcess(win32con.PROCESS_TERMINATE | win32con.PROCESS_SET_QUOTA, False, python_pid)
         win32job.AssignProcessToJobObject(self.job, handle)
         win32api.CloseHandle(handle)
 
