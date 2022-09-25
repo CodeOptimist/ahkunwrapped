@@ -181,7 +181,7 @@ class Script:
     
     ; call on main thread, much slower but may be necessary for DllCall() to avoid:
     ;   Error 0x8001010d An outgoing call cannot be made since the application is dispatching an input-synchronous call.
-    _Py_MsgF_Main(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
+    _Py_MsgFMain(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         global _pyData, _pyPid
         SetBatchLines, -1
         if (wParam != _pyPid)
@@ -191,7 +191,7 @@ class Script:
         _pyData.Push(lParam)
         _pyData.Push(wParam)
         ; continue on main thread at below label
-        SetTimer, _Py_MsgF_Main, -1
+        SetTimer, _Py_MsgFMain, -1
         return 1
     }
     
@@ -265,7 +265,7 @@ class Script:
     OnMessage(''' + str(MSG_GET) + ''', Func("_Py_MsgGet"))
     OnMessage(''' + str(MSG_SET) + ''', Func("_Py_MsgSet"))
     OnMessage(''' + str(MSG_F) + ''', Func("_Py_MsgF"))
-    OnMessage(''' + str(MSG_F_MAIN) + ''', Func("_Py_MsgF_Main"))
+    OnMessage(''' + str(MSG_F_MAIN) + ''', Func("_Py_MsgFMain"))
     OnMessage(''' + str(MSG_MORE) + ''', Func("_Py_MsgMore"))
     OnMessage(''' + str(MSG_EXIT) + ''', Func("_Py_MsgExit"))
     
@@ -278,8 +278,8 @@ class Script:
     _Py_StdOut("Initialized")
     return
     
-    ; from _Py_MsgF_Main()
-    _Py_MsgF_Main:
+    ; from _Py_MsgFMain()
+    _Py_MsgFMain:
         SetBatchLines, -1
         _Py_MsgF(_pyData.Pop(), _pyData.Pop(), _pyData.Pop(), _pyData.Pop(), True)
     return
