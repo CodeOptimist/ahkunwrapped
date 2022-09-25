@@ -8,7 +8,9 @@ import string
 import struct
 import subprocess
 import sys
+import threading
 import time
+import traceback
 from itertools import chain
 from pathlib import Path
 from subprocess import TimeoutExpired
@@ -18,6 +20,8 @@ from warnings import warn
 import win32api
 import win32con
 import win32job
+# noinspection PyUnresolvedReferences
+from win32api import OutputDebugString
 
 # support for PyInstaller
 # noinspection PyProtectedMember,PyUnresolvedReferences
@@ -80,6 +84,7 @@ class Script:
     MSG_F: ClassVar[int] = 0x8003
     MSG_F_MAIN: ClassVar[int] = 0x8004
     MSG_MORE: ClassVar[int] = 0x8005
+    MSG_EXIT: ClassVar[int] = 0x8006
 
     SEPARATOR: ClassVar[str] = '\3'
     EOM_MORE: ClassVar[str] = SEPARATOR * 2
@@ -247,8 +252,9 @@ class Script:
         return 1
     }
     
-    _Py_ExitApp() {
+    _Py_MsgExit() {
         ExitApp
+        return 1 ; required even after ExitApp
     }
     
     _pyData := []
@@ -261,6 +267,7 @@ class Script:
     OnMessage(''' + str(MSG_F) + ''', Func("_Py_MsgF"))
     OnMessage(''' + str(MSG_F_MAIN) + ''', Func("_Py_MsgF_Main"))
     OnMessage(''' + str(MSG_MORE) + ''', Func("_Py_MsgMore"))
+    OnMessage(''' + str(MSG_EXIT) + ''', Func("_Py_MsgExit"))
     
     _Py_StdOut(A_ScriptHwnd)
     
@@ -317,7 +324,7 @@ class Script:
         self.pid = os.getpid()
 
         # if we exit, exit AutoHotkey
-        atexit.register(self.exit)
+        atexit.register(self.on_python_exit)
 
         # if we terminate, terminate AutoHotkey
         self.job = win32job.CreateJobObject(None, "")
@@ -507,18 +514,22 @@ class Script:
     def poll(self) -> None:
         exit_code = self.popen.poll()
         if exit_code is not None:
+            # OutputDebugString(f"Exit code: {exit_code}; call stack: {traceback.format_stack()}")
             raise AhkExitException(exit_code)
 
+    def on_python_exit(self) -> None:
+        with suppress(AhkExitException):  # Expected and not exceptional.
+            self.exit()
+
     def exit(self, timeout=5.0) -> None:
+        atexit.unregister(self.on_python_exit)
+
         try:
-            self.call("_Py_ExitApp")  # clean, removes tray icons etc.
-            return_code = self.popen.wait(timeout)
-            if return_code:
-                raise AhkExitException(return_code)
-        except AhkExitException:
-            pass
-        except TimeoutExpired:
+            # clean; removes tray icons etc.
+            # OutputDebugString(f"Sending ExitApp from thread {threading.get_ident()}")
+            self._send_message(Script.MSG_EXIT)
+            exit_code = self.popen.wait(timeout)
+            raise AhkExitException(exit_code)
+        except TimeoutExpired as ex:
             self.popen.terminate()
-        except Exception:
-            self.popen.terminate()
-            raise
+            raise AhkExitException(1) from ex
