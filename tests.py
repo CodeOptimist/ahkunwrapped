@@ -51,24 +51,25 @@ def test_smile(f):
 @given(st.sampled_from([ahk.call, ahk.call_main, ahk.f, ahk.f_main]))
 def test_missing_func(func):
     with pytest.raises(autohotkey.AhkFuncNotFoundError):
-        func('BadFunc')
+        func('ThisDoesntExist')
 
 
+# This test may fail the first time after a computer restart.
 @settings(deadline=timedelta(seconds=1))
 @given(st.sampled_from([ahk.call, ahk.f]), st.sampled_from([ahk.call_main, ahk.f_main]))
-def test_main_required(func, func_main):
+def test_main_thread_required(func, func_main):
     with pytest.raises(autohotkey.AhkCantCallOutInInputSyncCallError):
         func('ComMsGraphCall')
     func_main('ComMsGraphCall')
 
 
 @given(st.sampled_from([ahk.call, ahk.call_main]), st.sampled_from([ahk.f, ahk.f_main]))
-def test_main_not_required(call, f):
+def test_main_thread_not_required(call, f):
     call('ComFsoTempName')
     assert f('ComFsoTempName').endswith('.tmp')
 
 
-def test_user_exception():
+def test_userexception():
     try:
         ahk.call('UserException')
         assert False
@@ -79,7 +80,7 @@ def test_user_exception():
         assert e.file == ahk.file
 
 
-def test_user_exception_lineno():
+def test_userexception_lineno():
     try:
         ahk.call('UserException')
         assert False
@@ -88,32 +89,34 @@ def test_user_exception_lineno():
         assert e.line == line_num
 
 
+# Documenting that we can't distinguish between Exception() with good data and a contrived object with bad. They're the same within AHK.
 @pytest.mark.xfail(strict=True)  # expected fail
-def test_fake_exception_lineno():
+def test_userexception_lineno_for_contrived():
     try:
-        ahk.call('FakeException')
+        ahk.call('ContrivedException')
         assert False
     except autohotkey.AhkUserException as e:
-        line_num = 1 + next(num for (num, line) in enumerate(ahk.script.split('\n')) if line.startswith('    throw {Message: "FakeException"'))
+        line_num = 1 + next(num for (num, line) in enumerate(ahk.script.split('\n')) if line.startswith('    throw {Message: "ContrivedException"'))
         assert e.line == line_num
 
 
-def test_non_exception_warning():
+def test_nonexception_warning():
     for i in range(1, 4):
         with pytest.warns(autohotkey.AhkCaughtNonExceptionWarning):
             with pytest.raises(autohotkey.AhkUserException):
                 ahk.call(f'NonException{i}')
 
 
+# Documenting that we can't distinguish between Exception() with good data and a contrived object with bad. They're the same within AHK.
 @pytest.mark.xfail(strict=True)  # expected fail
-def test_non_exception_warning_for_fake():
+def test_nonexception_warning_for_contrived():
     with pytest.warns(autohotkey.AhkCaughtNonExceptionWarning):
         with pytest.raises(autohotkey.AhkUserException):
-            ahk.call(f'FakeException')
+            ahk.call(f'ContrivedException')
 
 
 # if fail, adjust its stacklevel=
-def test_non_exception_warning_lineno():
+def test_nonexception_warning_lineno():
     for i in range(1, 4):
         with warnings.catch_warnings(record=True) as w:
             with pytest.raises(autohotkey.AhkUserException):
@@ -133,7 +136,7 @@ def test_warning_lineno():
 
 # warning covered in test_float()
 # if fail, adjust its stacklevel=
-def test_precision_warning_lineno():
+def test_precisionwarning_lineno():
     with warnings.catch_warnings(record=True) as w:
         echo(1 / 3)  # AhkLossOfPrecisionWarning
         assert w[0].filename == getframeinfo(currentframe()).filename and w[0].lineno == currentframe().f_lineno - 1

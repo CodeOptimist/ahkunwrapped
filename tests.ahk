@@ -48,8 +48,8 @@ NonException4() {
     throw {Message: "example message", What: "example what", File: "some file", Line: "not a number"}
 }
 
-FakeException() {
-    throw {Message: "FakeException", What: "example what", File: "some file", Line: 9999999999}
+ContrivedException() {
+    throw {Message: "ContrivedException", What: "example what", File: "some file", Line: 9999999999}
 }
 
 Echo(val) {
