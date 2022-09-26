@@ -4,16 +4,19 @@ import math
 import random
 # noinspection PyUnresolvedReferences
 import sys
+import time
 import timeit
 import warnings
 from datetime import timedelta
 from functools import partial
 from inspect import currentframe, getframeinfo
 from pathlib import Path
+from threading import Thread
 
 import hypothesis.strategies as st
 import pytest
 from hypothesis import given, settings
+from win32api import OutputDebugString
 
 import ahkunwrapped as autohotkey
 from ahkunwrapped import Script
@@ -230,3 +233,36 @@ def test_long_text(f, text):
 def test_job_script_limit():
     for _ in range(101):
         Script()
+
+
+# Recommend DebugView++ to view OutputDebugString https://github.com/CobaltFusion/DebugViewPP/releases
+#  Have to manually kill this test if it takes longer than 5 seconds, hypothesis 'deadline' doesn't seem to help.
+#   https://docs.pytest.org/en/latest/how-to/failures.html#warning-about-unraisable-exceptions-and-unhandled-thread-exceptions
+def test_threads_5sec():
+    #  https://stackoverflow.com/a/50935020/879
+    exception = None
+
+    def thread():
+        nonlocal exception
+        try:
+            end_time = time.time() + 5
+            while time.time() < end_time:
+                f = random.choice((echo, echo_main))
+                # to throw in some MSG_MORE
+                text = random.choice(("a" * int(Script.BUFFER_SIZE / 3), "b" * int(Script.BUFFER_SIZE * 3)))
+                assert f(text) == text
+                if random.choice((False, True)):
+                    ahk.set('myVar', text)
+                time.sleep(random.random() / 10)
+        except Exception as e:
+            exception = e
+
+    OutputDebugString("STARTING THREADS")
+    threads = [Thread(target=thread, daemon=True), Thread(target=thread, daemon=True), Thread(target=thread, daemon=True)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    OutputDebugString("THREADS FINISHED")
+    if exception:
+        raise exception

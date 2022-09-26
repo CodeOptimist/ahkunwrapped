@@ -73,6 +73,10 @@ class AhkCaughtNonExceptionWarning(AhkWarning):
 Primitive = Union[bool, float, int, str]
 
 
+def comment_debug():
+    return ";" if "pytest" not in sys.modules else ""
+
+
 class Script:
     # Python 3.8 would use Final instead of ClassVar https://www.python.org/dev/peps/pep-0591/#id14
     MSG_GET: ClassVar[int] = 0x8001
@@ -119,7 +123,7 @@ class Script:
     _Py_MsgMore(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset
         SetBatchLines, -1
-        ;DebugMsg(wParam, msg)
+        ''' + comment_debug() + '''DebugMsg(wParam, msg)
        
         numRead := ''' + str(BUFFER_W_MORE_SIZE) + '''
         _Py_Response(_pyStdOut, _pyOutText, _pyOutOffset += numRead, False)
@@ -144,7 +148,7 @@ class Script:
     _Py_MsgCopyData(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         global _pyThreadMsgData, _PY_SEPARATOR
         SetBatchLines, -1
-        ;DebugMsg(wParam, msg)
+        ''' + comment_debug() + '''DebugMsg(wParam, msg)
         
         ;dataTypeId := NumGet(lParam + 0*A_PtrSize) ; unneeded atm
         dataSize := NumGet(lParam + 1*A_PtrSize)
@@ -175,13 +179,13 @@ class Script:
     _Py_MsgFMain(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         global _pyMsgFMainData
         SetBatchLines, -1
-        ;DebugMsg(wParam, msg)
+        ''' + comment_debug() + '''DebugMsg(wParam, msg)
             
         _pyMsgFMainData.Push(hwnd)
         _pyMsgFMainData.Push(msg)
         _pyMsgFMainData.Push(lParam)
         _pyMsgFMainData.Push(wParam)
-        ;OutputDebug, SENDING TO MAIN THREAD
+        ''' + comment_debug() + '''OutputDebug, SENDING TO MAIN THREAD
         ; continue on main thread at below label
         ;  ordinarily a new message can interrupt this, but none will be sent because of our lock
         SetTimer, _Py_MsgFMain, -0 ; negative for one-time, and 0 is indeed quicker than 1
@@ -191,9 +195,8 @@ class Script:
     _Py_MsgF(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd, ByRef onMain := False) {
         global _pyThreadMsgData, _pyUserBatchLines, _PY_SEPARATOR
         SetBatchLines, -1
-        if (not onMain) {
-            ;DebugMsg(wParam, msg)
-        }
+        ''' + comment_debug() + '''if (not onMain)
+        ''' + comment_debug() + '''    DebugMsg(wParam, msg)
        
         func := _pyThreadMsgData[wParam].RemoveAt(1)
         if (not IsFunc(func)) {
@@ -231,7 +234,7 @@ class Script:
     _Py_MsgGet(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         local name, val
         SetBatchLines, -1
-        ;DebugMsg(wParam, msg)
+        ''' + comment_debug() + '''DebugMsg(wParam, msg)
         name := _pyThreadMsgData[wParam].RemoveAt(1)
         val := %name%
         _pyThreadMsgData.Delete(wParam)
@@ -241,7 +244,7 @@ class Script:
     _Py_MsgSet(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         local name
         SetBatchLines, -1
-        ;DebugMsg(wParam, msg)
+        ''' + comment_debug() + '''DebugMsg(wParam, msg)
         name := _pyThreadMsgData[wParam].RemoveAt(1)
         %name% := _pyThreadMsgData[wParam].RemoveAt(1)
         _pyThreadMsgData.Delete(wParam)
@@ -282,7 +285,7 @@ class Script:
     ; from _Py_MsgFMain()
     _Py_MsgFMain:
         SetBatchLines, -1
-        ;OutputDebug, RECEIVED IN MAIN THREAD
+        ''' + comment_debug() + '''OutputDebug, RECEIVED IN MAIN THREAD
         _Py_MsgF(_pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), True)
     return
     
