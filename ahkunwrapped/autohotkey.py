@@ -10,7 +10,7 @@ import subprocess
 import sys
 import threading
 import time
-import traceback
+from contextlib import suppress
 from itertools import chain
 from pathlib import Path
 from subprocess import TimeoutExpired
@@ -26,8 +26,6 @@ from win32api import OutputDebugString
 # support for PyInstaller
 # noinspection PyProtectedMember,PyUnresolvedReferences
 PACKAGE_PATH = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).parent
-
-Primitive = Union[bool, float, int, str]
 
 
 class AhkException(Exception): pass                         # noqa: E701
@@ -70,6 +68,9 @@ class AhkCaughtNonExceptionWarning(AhkWarning):
         if not exception.message:
             message += "\n\tMay have been an AutoHotkey object e.g. {abc: 123} intended for use within 'catch'."
         super().__init__(message)
+
+
+Primitive = Union[bool, float, int, str]
 
 
 class Script:
@@ -182,7 +183,8 @@ class Script:
         _pyMsgFMainData.Push(wParam)
         ;OutputDebug, SENDING TO MAIN THREAD
         ; continue on main thread at below label
-        SetTimer, _Py_MsgFMain, -1
+        ;  ordinarily a new message can interrupt this, but none will be sent because of our lock
+        SetTimer, _Py_MsgFMain, -0 ; negative for one-time, and 0 is indeed quicker than 1
         return 1
     }
     
@@ -293,6 +295,7 @@ class Script:
     def __init__(self, script: str = "", ahk_path: Path = None, execute_from: Path = None) -> None:
         self.file = None
         self.script = script
+        self.lock = threading.Lock()
 
         if ahk_path is None:
             ahk_path = PACKAGE_PATH / r'lib\AutoHotkey\AutoHotkey.exe'
@@ -353,8 +356,8 @@ class Script:
         self.popen.stdin.write(self.script.encode('utf-8'))
         self.popen.stdin.close()
 
-        self.hwnd = int(self._read_response(), 16)
-        assert self._read_response() == "Initialized"
+        self.hwnd = int(self._read_response(has_lock=False), 16)
+        assert self._read_response(has_lock=False) == "Initialized"
 
     @staticmethod
     def from_file(path: Path, format_dict: Mapping[str, str] = None, ahk_path: Path = None, execute_from: Path = None) -> 'Script':
@@ -367,7 +370,7 @@ class Script:
         script.file = path  # for exceptions
         return script
 
-    def _read_pipes(self) -> Tuple[str, str]:
+    def _read_pipes(self, has_lock: bool) -> Tuple[str, str]:
         more = bytes(Script.EOM_MORE, 'utf-16-le') + b'\n'
         end = bytes(Script.EOM_END, 'utf-16-le') + b'\n'
 
@@ -397,10 +400,12 @@ class Script:
             if is_end:
                 break
             self._send_message(Script.MSG_MORE)
+        if has_lock:
+            self.lock.release()
         return (err.decode('utf-16-le')), (out.decode('utf-16-le'))
 
-    def _read_response(self) -> str:
-        err, out = self._read_pipes()
+    def _read_response(self, has_lock: bool = True) -> str:
+        err, out = self._read_pipes(has_lock)
         if err:
             name, args = err.split(Script.SEPARATOR, 1)
 
@@ -445,6 +450,7 @@ class Script:
         data_type_id = msg  # anything; unneeded atm
         struct_ = struct.pack('PLP', data_type_id, size, addr)
         self._send_message(win32con.WM_COPYDATA, struct_)
+        self.lock.acquire(blocking=True)  # False to witness test failure
         self._send_message(msg)
 
     @staticmethod
@@ -513,7 +519,10 @@ class Script:
         return Script._from_ahk_str(self._read_response())
 
     def set(self, name: str, val: Primitive) -> None:
+        # Every _send() will lock, so others are finished before we set().
+        #  We don't need a confirmation response, just the ensurance that it finishes before others begin.
         self._send(Script.MSG_SET, [name, val])
+        self.lock.release()
 
     # if AutoHotkey is terminated, get error code
     def poll(self) -> None:
@@ -538,3 +547,6 @@ class Script:
         except TimeoutExpired as ex:
             self.popen.terminate()
             raise AhkExitException(1) from ex
+        finally:
+            with suppress(RuntimeError):
+                self.lock.release()
