@@ -14,6 +14,7 @@ class Event(Enum):
     QUIT, SEND_CHOICE, CLEAR_CHOICE, CHOOSE_MONTH, CHOOSE_DAY = range(5)
 
 
+# format_dict= so we can use {{VARIABLE}} within example.ahk
 ahk = Script.from_file(Path('example.ahk'), format_dict=globals())
 
 
@@ -23,13 +24,14 @@ def main() -> None:
     ts = 0
     while True:
         try:
-            ahk.poll()
+            # ahk.poll()  # detect exit, but all ahk functions include this
+
             s_elapsed = time.time() - ts
             if s_elapsed >= 60:
                 ts = time.time()
                 print_minute()
 
-            event = ahk.get('event')
+            event = ahk.get('event')  # contains ahk.poll()
             if event:
                 ahk.set('event', '')
                 on_event(event)
@@ -39,7 +41,7 @@ def main() -> None:
 
 
 def print_minute() -> None:
-    print(f'It is now {datetime.now().time()}')
+    print(f"It is now {datetime.now().time()}")
 
 
 def on_event(event: str) -> None:
@@ -56,10 +58,10 @@ def on_event(event: str) -> None:
         ahk.call('Send', f'{get_choice()} ')
     if event == str(Event.CHOOSE_MONTH):
         choice = datetime.now().strftime('%b')
-        ahk.call('ToolTip', f'Month is {get_choice()}, {HOTKEY_SEND_CHOICE} to insert.')
+        ahk.call('ToolTip', f"Month is {get_choice()}, {HOTKEY_SEND_CHOICE} to insert.")
     if event == str(Event.CHOOSE_DAY):
         choice = datetime.now().strftime('%#d')
-        ahk.call('ToolTip', f'Day is {get_choice()}, {HOTKEY_SEND_CHOICE} to insert.')
+        ahk.call('ToolTip', f"Day is {get_choice()}, {HOTKEY_SEND_CHOICE} to insert.")
 
 
 if __name__ == '__main__':

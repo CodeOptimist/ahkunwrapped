@@ -15,11 +15,11 @@ Send(text) {
 
 ToolTip(text, s := 2) {
     ToolTip, % text
-    SetTimer, RemoveToolTip, % s * 1000
+    ; negative for non-repeating
+    SetTimer, RemoveToolTip, % s * -1000
 }
 
 RemoveToolTip:
-    SetTimer, RemoveToolTip, off
     ToolTip,
     event = {{Event.CLEAR_CHOICE}}
 return

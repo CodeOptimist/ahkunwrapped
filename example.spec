@@ -6,7 +6,7 @@ import ahkunwrapped
 a = Analysis(
     ['example.py'],
     datas=[
-        (Path(ahkunwrapped.__file__).parent / 'lib', 'lib'),
+        (Path(ahkunwrapped.__file__).parent / 'lib', 'lib'),  # required
         ('example.ahk', '.'),
     ]
 )
