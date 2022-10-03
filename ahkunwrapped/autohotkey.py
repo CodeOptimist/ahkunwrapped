@@ -364,6 +364,7 @@ class Script:
         err, out = bytearray(), bytearray()
         while True:
             def has_all(bytearray_: bytearray) -> bool:
+                self.poll()
                 return bytearray_.endswith(end) or bytearray_.endswith(more)
 
             # we're careful not to over-read into the next response,
