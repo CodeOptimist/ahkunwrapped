@@ -298,7 +298,6 @@ class Script:
     def __init__(self, script: str = "", ahk_path: Path = None, execute_from: Path = None) -> None:
         self.file = None
         self.script = script
-        self.lock = threading.Lock()
 
         if ahk_path is None:
             ahk_path = PACKAGE_PATH / r'lib\AutoHotkey\AutoHotkey.exe'
@@ -359,8 +358,10 @@ class Script:
         self.popen.stdin.write(self.script.encode('utf-8'))
         self.popen.stdin.close()
 
-        self.hwnd = int(self._read_response(has_lock=False), 16)
-        assert self._read_response(has_lock=False) == "Initialized"
+        self.lock = None
+        self.hwnd = int(self._read_response(), 16)
+        assert self._read_response() == "Initialized"
+        self.lock = threading.Lock()
 
     @staticmethod
     def from_file(path: Path, format_dict: Mapping[str, str] = None, ahk_path: Path = None, execute_from: Path = None) -> 'Script':
@@ -373,7 +374,7 @@ class Script:
         script.file = path  # for exceptions
         return script
 
-    def _read_pipes(self, has_lock: bool) -> Tuple[str, str]:
+    def _read_pipes(self) -> Tuple[str, str]:
         more = bytes(Script.EOM_MORE, 'utf-16-le') + b'\n'
         end = bytes(Script.EOM_END, 'utf-16-le') + b'\n'
 
@@ -403,12 +404,12 @@ class Script:
             if is_end:
                 break
             self._send_message(Script.MSG_MORE)
-        if has_lock:
+        if self.lock is not None:
             self.lock.release()
         return (err.decode('utf-16-le')), (out.decode('utf-16-le'))
 
-    def _read_response(self, has_lock: bool = True) -> str:
-        err, out = self._read_pipes(has_lock)
+    def _read_response(self) -> str:
+        err, out = self._read_pipes()
         if err:
             name, args = err.split(Script.SEPARATOR, 1)
 
@@ -550,6 +551,3 @@ class Script:
         except TimeoutExpired as ex:
             self.popen.terminate()
             raise AhkExitException(1) from ex
-        finally:
-            with suppress(RuntimeError):
-                self.lock.release()
