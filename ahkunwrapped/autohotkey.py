@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 import time
+# import traceback
 from contextlib import suppress
 from itertools import chain
 from pathlib import Path
@@ -70,11 +71,11 @@ class AhkCaughtNonExceptionWarning(AhkWarning):
         super().__init__(message)
 
 
-Primitive = Union[bool, float, int, str]
-
-
-def comment_debug():
+def comment_debug() -> str:
     return ";" if "pytest" not in sys.modules else ""
+
+
+Primitive = Union[bool, float, int, str]
 
 
 class Script:
@@ -326,9 +327,6 @@ class Script:
                     shutil.copyfile(ahk_path, ahk_into_folder)
             ahk_path = ahk_into_folder
 
-        # if we exit, exit AutoHotkey
-        atexit.register(self.on_python_exit)
-
         python_pid = os.getpid()
         #  https://learn.microsoft.com/en-gb/windows/win32/api/winbase/nf-winbase-createjobobjecta
         # Supplying a name here prevents the following after creating 100 Scripts:
@@ -362,6 +360,9 @@ class Script:
         self.hwnd = int(self._read_response(), 16)
         assert self._read_response() == "Initialized"
         self.lock = threading.Lock()
+
+        # last to make sure things went okay since it runs on its own thread
+        atexit.register(self._on_python_exit)  # if we exit, exit AutoHotkey
 
     @staticmethod
     def from_file(path: Path, format_dict: Mapping[str, str] = None, ahk_path: Path = None, execute_from: Path = None) -> 'Script':
@@ -532,15 +533,16 @@ class Script:
     def poll(self) -> None:
         exit_code = self.popen.poll()
         if exit_code is not None:
+            atexit.unregister(self._on_python_exit)
             # OutputDebugString(f"Exit code: {exit_code}; call stack: {traceback.format_stack()}")
             raise AhkExitException(exit_code)
 
-    def on_python_exit(self) -> None:
+    def _on_python_exit(self) -> None:
         with suppress(AhkExitException):  # Expected and not exceptional.
             self.exit()
 
     def exit(self, timeout=5.0) -> None:
-        atexit.unregister(self.on_python_exit)
+        atexit.unregister(self._on_python_exit)
 
         try:
             # clean; removes tray icons etc.

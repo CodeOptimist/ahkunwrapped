@@ -35,8 +35,8 @@ def main() -> None:
             if event:
                 ahk.set('event', '')
                 on_event(event)
-        except AhkExitException as e:
-            sys.exit(e.args[0])
+        except AhkExitException as ex:
+            sys.exit(ex.args[0])
         time.sleep(0.01)
 
 
