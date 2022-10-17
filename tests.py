@@ -216,6 +216,14 @@ def test_text(f, text):
         return
 
 
+def test_eommore_corrupted_to_eomend():
+    # Script.SEPARATOR is b'\x03\x00'
+    val = ' ' * 2044
+    val += b'\x00\x03'.decode('utf-16-le')  # grave accent diacritic
+    ahk.set('myVar', val)
+    assert val == ahk.get_raw('myVar')
+
+
 @pytest.mark.filterwarnings('error')
 @given(raw_result_funcs, st.text())
 def test_long_text(f, text):

@@ -92,8 +92,10 @@ class Script:
     EOM_END: ClassVar[str] = SEPARATOR * 3
 
     BUFFER_SIZE: ClassVar[int] = 4096
-    BUFFER_W_MORE_SIZE: ClassVar[int] = BUFFER_SIZE - len(EOM_MORE) * 2 - len('\n')
-    BUFFER_W_END_SIZE: ClassVar[int] = BUFFER_SIZE - len(EOM_END) * 2 - len('\n')
+    BUFFER_W_MORE_SIZE: ClassVar[int] = BUFFER_SIZE - len(EOM_MORE) * 2 - len('\n') - 1  # :SingleByteNewline
+    assert BUFFER_W_MORE_SIZE % 2 == 0  # utf-16 is 2 bytes
+    BUFFER_W_END_SIZE: ClassVar[int] = BUFFER_SIZE - len(EOM_END) * 2 - len('\n') - 1
+    assert BUFFER_W_END_SIZE % 2 == 0
 
     python_pid: ClassVar = os.getpid()
     python_job: ClassVar = None
@@ -123,7 +125,7 @@ class Script:
         else
             pipe.Write(''' + ' '.join(f'Chr({ord(c)})' for c in EOM_MORE) + ''')
         newLine := "`n"
-        pipe.RawWrite(newLine, 1)  ; must be a single byte for Python's readline()
+        pipe.RawWrite(newLine, 1)  ; :SingleByteNewline
         pipe.Read(0)
     }
   
@@ -160,7 +162,7 @@ class Script:
         ;dataTypeId := NumGet(lParam + 0*A_PtrSize) ; unneeded atm
         dataSize := NumGet(lParam + 1*A_PtrSize)
         strAddr := NumGet(lParam + 2*A_PtrSize)
-        ; limitation of StrGet(): data is truncated after \0
+        ; limitation of StrGet(): data is truncated after \\0
         data := StrGet(strAddr, dataSize, "utf-8")
         ; OutputDebug, Received: '%data%'
         
@@ -411,7 +413,7 @@ class Script:
         return script
 
     def _read_pipes(self) -> Tuple[str, str]:
-        more = bytes(Script.EOM_MORE, 'utf-16-le') + b'\n'
+        more = bytes(Script.EOM_MORE, 'utf-16-le') + b'\n'  # :SingleByteNewline
         end = bytes(Script.EOM_END, 'utf-16-le') + b'\n'
 
         err, out = bytearray(), bytearray()
@@ -424,9 +426,9 @@ class Script:
             # but we can at least go line by line since we end with \n
             err_buffer, out_buffer = bytearray(), bytearray()
             while not has_all(out_buffer):
-                out_buffer += self.popen.stdout.readline()  # reads to a *single* '\0d' byte
-            while not has_all(err_buffer):                  # a utf-16 newline '\0d\00' would be split
-                err_buffer += self.popen.stderr.readline()    # with '\00' starting the next response
+                out_buffer += self.popen.stdout.readline()  # :SingleByteNewline
+            while not has_all(err_buffer):
+                err_buffer += self.popen.stderr.readline()
 
             is_end = out_buffer.endswith(end) and err_buffer.endswith(end)
 
