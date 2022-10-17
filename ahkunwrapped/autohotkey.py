@@ -517,21 +517,30 @@ class Script:
         return self._from_ahk_str(response) if coerce_result else response
 
     def call(self, name: str, *args: Primitive) -> None:
+        """Call a script function without receiving the result, if any. Least latency."""
         self._f(Script.MSG_F, name, *args, need_result=False)
 
     def call_main(self, name: str, *args: Primitive) -> None:
+        """Same as `call()` but executed on AutoHotkey's main thread.
+        Worse latency, but solution to `AhkCantCallOutInInputSyncCallError`."""
         self._f(Script.MSG_F_MAIN, name, *args, need_result=False)
 
     def f_raw(self, name: str, *args: Primitive) -> str:
+        """Call a script function and return the result as its raw string (don't mimic AutoHotkey's type inference)."""
         return self._f(Script.MSG_F, name, *args, need_result=True)
 
     def f_raw_main(self, name: str, *args: Primitive) -> str:
+        """Same as `f_raw()` but executed on AutoHotkey's main thread.
+        Worse latency, but solution to `AhkCantCallOutInInputSyncCallError`."""
         return self._f(Script.MSG_F_MAIN, name, *args, need_result=True)
 
     def f(self, name: str, *args: Primitive) -> Primitive:
+        """Call a script function and return the result."""
         return self._f(Script.MSG_F, name, *args, need_result=True, coerce_result=True)
 
     def f_main(self, name: str, *args: Primitive) -> Primitive:
+        """Same as `f()` but executed on AutoHotkey's main thread.
+        Worse latency, but solution to `AhkCantCallOutInInputSyncCallError`."""
         return self._f(Script.MSG_F_MAIN, name, *args, need_result=True, coerce_result=True)
 
     @staticmethod
@@ -551,14 +560,17 @@ class Script:
         return str_
 
     def get_raw(self, name: str) -> str:
+        """Get a global script variable or built-in as its raw string (don't mimic AutoHotkey's type inference)."""
         self._send(Script.MSG_GET, [name])
         return self._read_response()
 
     def get(self, name: str) -> Primitive:
+        """Get a global script variable or built-in like `A_TimeIdle`."""
         self._send(Script.MSG_GET, [name])
         return Script._from_ahk_str(self._read_response())
 
     def set(self, name: str, val: Primitive) -> None:
+        """Set a global script variable."""
         # Every _send() will lock, so others are finished before we set().
         #  We don't need a confirmation response, just the ensurance that it finishes before others begin.
         self._send(Script.MSG_SET, [name, val])
@@ -566,6 +578,8 @@ class Script:
 
     # if AutoHotkey is terminated, get error code
     def poll(self) -> None:
+        """Detect when AutoHotkey process exits, typically within a loop, by raising `AhkExitException`.
+        (Only needed in contexts without other Script functions, as they all run this internally.)"""
         exit_code = self.popen.poll()
         if exit_code is not None:
             # OutputDebugString(f"Exit code: {exit_code}; call stack: {traceback.format_stack()}")
