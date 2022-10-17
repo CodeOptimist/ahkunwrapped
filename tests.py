@@ -1,12 +1,15 @@
 # Copyright (C) 2019-2022  Christopher S. Galpin.  Licensed under AGPL-3.0-or-later.  See /NOTICE.
 import itertools
 import math
+import os
 import random
+import signal
 # noinspection PyUnresolvedReferences
 import sys
 import time
 import timeit
 import warnings
+from contextlib import suppress
 from datetime import timedelta
 from functools import partial
 from inspect import currentframe, getframeinfo
@@ -14,12 +17,13 @@ from pathlib import Path
 from threading import Thread
 
 import hypothesis.strategies as st
+import psutil
 import pytest
 from hypothesis import given, settings
 from win32api import OutputDebugString
 
 import ahkunwrapped as autohotkey
-from ahkunwrapped import Script
+from ahkunwrapped import Script, AhkExitException
 
 ahk = Script.from_file(Path('tests.ahk'))
 
@@ -228,11 +232,59 @@ def test_long_text(f, text):
 
 
 # At > 100 Scripts:
-# >       win32job.AssignProcessToJobObject(self.job, handle)
+# >       win32job.AssignProcessToJobObject(job, handle)
 # E       pywintypes.error: (50, 'AssignProcessToJobObject', 'The request is not supported.')
 def test_job_script_limit():
     for _ in range(101):
         Script()
+
+
+def test_kill_descendants():
+    charmap = """
+        AutoExec() {
+            global pid
+            Run, charmap,,, pid
+        }
+    """
+
+    for kill_process_tree_on_exit in (True, False):
+        kill_proc = Script(charmap, kill_process_tree_on_exit=kill_process_tree_on_exit)
+        kill_pid = kill_proc.get('pid')
+        orphan_proc = Script(charmap, kill_process_tree_on_exit=kill_process_tree_on_exit)
+        orphan_pid = orphan_proc.get('pid')
+
+        with suppress(AhkExitException):
+            kill_proc.exit(kill_descendants=True)
+            orphan_proc.exit(kill_descendants=False)
+
+        time.sleep(1)
+        assert not psutil.pid_exists(kill_pid), f"kill_process_tree_on_exit={kill_process_tree_on_exit}"
+        try:
+            assert psutil.pid_exists(orphan_pid), f"kill_process_tree_on_exit={kill_process_tree_on_exit}"
+        finally:
+            os.kill(orphan_pid, signal.SIGTERM)
+
+
+@pytest.mark.skipif(sys.getwindowsversion().major < 10, reason="Calculator was replaced with a UWP app in Windows 10.")
+@pytest.mark.xfail(strict=True)  # expected fail
+def test_kill_uwp_descendants():
+    calc = """
+        AutoExec() {
+            global calc_pid
+            Run, calc,,, calc_pid
+        }
+    """
+
+    kill_proc = Script(calc)
+    kill_pid = kill_proc.get('calc_pid')
+    with suppress(AhkExitException):
+        kill_proc.exit(kill_descendants=True)
+
+    time.sleep(1)
+    try:
+        assert not psutil.pid_exists(kill_pid)
+    finally:
+        os.kill(kill_pid, signal.SIGTERM)
 
 
 # Recommend DebugView++ to view OutputDebugString https://github.com/CobaltFusion/DebugViewPP/releases

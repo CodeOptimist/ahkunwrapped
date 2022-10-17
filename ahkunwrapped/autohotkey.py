@@ -11,11 +11,11 @@ import sys
 import threading
 import time
 # import traceback
-from contextlib import suppress
+from contextlib import suppress, contextmanager
 from itertools import chain
 from pathlib import Path
 from subprocess import TimeoutExpired
-from typing import ClassVar, Mapping, Optional, Sequence, Tuple, Union
+from typing import ClassVar, Mapping, Optional, Sequence, Tuple, Union, ContextManager
 from warnings import warn
 
 import win32api
@@ -95,9 +95,15 @@ class Script:
     BUFFER_W_MORE_SIZE: ClassVar[int] = BUFFER_SIZE - len(EOM_MORE) * 2 - len('\n')
     BUFFER_W_END_SIZE: ClassVar[int] = BUFFER_SIZE - len(EOM_END) * 2 - len('\n')
 
+    python_pid: ClassVar = os.getpid()
+    python_job: ClassVar = None
+
     CORE: ClassVar[str] = '''
     _pyUserBatchLines := A_BatchLines
     SetBatchLines, -1
+    Process, Exist, ''' + str(python_pid) + '''
+    if (ErrorLevel = 0)
+        ExitApp ; https://stackoverflow.com/q/73506891/#comment129808240_73506891 :AvoidJobRace
     #NoEnv
     #NoTrayIcon
     #Persistent
@@ -259,7 +265,7 @@ class Script:
     
     DebugMsg(wParam, msg) {
         OutputDebug, % Format("msg {:#06x}\t\tthread {:#05} -> {:#05}\t\tprocess {:#05} -> {:#05}"
-            , msg, wParam, DllCall("GetCurrentThreadId"), ''' + str(os.getpid()) + ''', DllCall("GetCurrentProcessId"))
+            , msg, wParam, DllCall("GetCurrentThreadId"), ''' + str(python_pid) + ''', DllCall("GetCurrentProcessId"))
     }
     
     _pyThreadMsgData := {}
@@ -296,9 +302,20 @@ class Script:
     AutoTrim, % A_AutoTrim          ; does nothing and never called, but makes label happy
     '''
 
-    def __init__(self, script: str = "", ahk_path: Path = None, execute_from: Path = None) -> None:
+    def __init__(self, script: str = "", ahk_path: Path = None, execute_from: Path = None, kill_process_tree_on_exit: bool = False) -> None:
+        """Launch an AutoHotkey process.
+
+        :param script: Actual AutoHotkey script. Optional if you only need built-in functions and variables.
+        :param ahk_path: Path to an alternative AutoHotkey executable than the one included (`ahk.get('A_AhkVersion')`).
+        :param execute_from: Path AutoHotkey executable will be hard-linked/copied to, for the benefit of individual show/hide status in system tray.
+        :param kill_process_tree_on_exit: Descendants of AutoHotkey process will inherit its win32 job object and terminate with it.
+            `Script.exit()` (an intentional exit) can override this.
+            *Caution*: Universal Windows Platform (UWP) apps (e.g. Windows 10's notepad.exe and calc.exe) discard our job object;
+            suggest using AutoHotkey's `OnExit()` in those cases: https://github.com/CodeOptimist/ahkunwrapped/issues/1
+        """
         self.file = None
         self.script = script
+        self.kill_process_tree_on_exit = kill_process_tree_on_exit
 
         if ahk_path is None:
             ahk_path = PACKAGE_PATH / r'lib\AutoHotkey\AutoHotkey.exe'
@@ -327,30 +344,40 @@ class Script:
                     shutil.copyfile(ahk_path, ahk_into_folder)
             ahk_path = ahk_into_folder
 
-        python_pid = os.getpid()
-        #  https://learn.microsoft.com/en-gb/windows/win32/api/winbase/nf-winbase-createjobobjecta
-        # Supplying a name here prevents the following after creating 100 Scripts:
-        #   pywintypes.error: (50, 'AssignProcessToJobObject', 'The request is not supported.')
-        # self.job = win32job.CreateJobObject(None, "")
-        self.job = win32job.CreateJobObject(None, f"ahkUnwrapped:{python_pid}")  # just to be descriptive, pid doesn't change
-        extended_info = win32job.QueryInformationJobObject(self.job, win32job.JobObjectExtendedLimitInformation)
-        # if we terminate, terminate AutoHotkey
-        extended_info['BasicLimitInformation']['LimitFlags'] = win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-        win32job.SetInformationJobObject(self.job, win32job.JobObjectExtendedLimitInformation, extended_info)
-        # add ourselves and subprocess will inherit job membership
-        handle = win32api.OpenProcess(win32con.PROCESS_TERMINATE | win32con.PROCESS_SET_QUOTA, False, python_pid)
-        win32job.AssignProcessToJobObject(self.job, handle)
-        win32api.CloseHandle(handle)
-
         # user script exceptions are already caught and sent to stderr, so /ErrorStdOut would only affect debugging CORE
         # self.cmd = [str(ahk_path), "/ErrorStdOut=utf-16-raw", "/CP65001", "*"]
         self.cmd = [str(ahk_path), "/CP65001", "*"]
-        # must pipe all three within a PyInstaller bundled exe
-        self.popen = subprocess.Popen(self.cmd, bufsize=Script.BUFFER_SIZE, executable=str(ahk_path), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        # keep grandchild processes from inheriting job membership above
-        extended_info['BasicLimitInformation']['LimitFlags'] |= win32job.JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK
-        win32job.SetInformationJobObject(self.job, win32job.JobObjectExtendedLimitInformation, extended_info)
+        self.popen = subprocess.Popen(self.cmd, bufsize=Script.BUFFER_SIZE, executable=str(ahk_path),
+                                      # must pipe all three for PyInstaller onefile exe
+                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        # NOTE: PROCESS EXPLORER WILL SHOW ONE OR THE OTHER JOB BUT NOT BOTH @Chris 2022-10
+        # https://learn.microsoft.com/en-gb/windows/win32/api/winbase/nf-winbase-createjobobjecta
+        # job containing all AutoHotkey processes to terminate with Python
+        Script.python_job = win32job.CreateJobObject(None, f"ahkUnwrapped:python.exe:{Script.python_pid}")  # will find existing or create
+        extended_info = win32job.QueryInformationJobObject(Script.python_job, win32job.JobObjectExtendedLimitInformation)
+        # silent breakaway so child processes won't inherit job
+        extended_info['BasicLimitInformation']['LimitFlags'] = win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | win32job.JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK
+        win32job.SetInformationJobObject(Script.python_job, win32job.JobObjectExtendedLimitInformation, extended_info)
+
+        # Both job objects "execute" when their last handle closes (Python exits), but here KILL_ON_JOB_CLOSE (for descendants) is optional.
+        # Separately, we can force terminate at any time. :TerminateJob
+        self.tree_job = win32job.CreateJobObject(None, f"ahkUnwrapped:AutoHotkey.exe:{self.popen.pid}")  # new job for descendants (and ourself)
+        extended_info = win32job.QueryInformationJobObject(self.tree_job, win32job.JobObjectExtendedLimitInformation)
+        # no breakaway; this job object will be inherited
+        if self.kill_process_tree_on_exit:
+            extended_info['BasicLimitInformation']['LimitFlags'] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        win32job.SetInformationJobObject(self.tree_job, win32job.JobObjectExtendedLimitInformation, extended_info)
+
+        @contextmanager
+        def get_handle(handle: object) -> ContextManager[object]:
+            try: yield handle
+            finally: win32api.CloseHandle(handle)
+
+        with get_handle(win32api.OpenProcess(win32con.PROCESS_TERMINATE | win32con.PROCESS_SET_QUOTA, False, self.popen.pid)) as ahk_handle:  # both flags required
+            win32job.AssignProcessToJobObject(Script.python_job, ahk_handle)  # see :AvoidJobRace
+            win32job.AssignProcessToJobObject(self.tree_job, ahk_handle)  # no race here, AutoHotkey won't `Run` a child process before "Initialized"
 
         self.popen.stdin.write(Script.CORE.encode('utf-8'))
         self.popen.stdin.write(self.script.encode('utf-8'))
@@ -365,13 +392,21 @@ class Script:
         atexit.register(self._on_python_exit)  # if we exit, exit AutoHotkey
 
     @staticmethod
-    def from_file(path: Path, format_dict: Mapping[str, str] = None, ahk_path: Path = None, execute_from: Path = None) -> 'Script':
+    def from_file(path: Path, format_dict: Mapping[str, str] = None, ahk_path: Path = None, execute_from: Path = None, kill_process_tree_on_exit: bool = None) -> 'Script':  # :FromFile
+        """Launch an AutoHotkey process from a script file.
+
+        :param path: Path to file.
+        :param format_dict: `.format()` dict to use {{variable}} within script. `globals()` is a common choice.
+        :param ahk_path: See `Script()`.
+        :param execute_from: See `Script()`.
+        :param kill_process_tree_on_exit: See `Script()`.
+        """
         with path.open(encoding='utf-8') as f:
             script = f.read()
         if format_dict is not None:
             script = script.replace(r'{', r'{{').replace(r'}', r'}}').replace(r'{{{', r'').replace(r'}}}', r'')
             script = script.format(**format_dict)
-        script = Script(script, ahk_path, execute_from)
+        script = Script(script, ahk_path, execute_from, kill_process_tree_on_exit)
         script.file = path  # for exceptions
         return script
 
@@ -533,23 +568,46 @@ class Script:
     def poll(self) -> None:
         exit_code = self.popen.poll()
         if exit_code is not None:
-            atexit.unregister(self._on_python_exit)
             # OutputDebugString(f"Exit code: {exit_code}; call stack: {traceback.format_stack()}")
+            atexit.unregister(self._on_python_exit)
             raise AhkExitException(exit_code)
 
     def _on_python_exit(self) -> None:
         with suppress(AhkExitException):  # Expected and not exceptional.
             self.exit()
 
-    def exit(self, timeout=5.0) -> None:
+    def exit(self, timeout: float = 5.0, kill_descendants: Optional[bool] = None) -> None:
+        """Ask AutoHotkey to exit cleanly (remove system tray icon, etc.).
+        To my knowledge only an `OnExit()` callback could delay this.
+
+        :param timeout: Seconds to wait before terminating. `None` for infinity.
+        :param kill_descendants: Uses `Script()`'s `kill_process_tree_on_exit` (default `False`) unless overriden here.
+        """
+
+        if kill_descendants is None:
+            kill_descendants = self.kill_process_tree_on_exit
+
+        # No need to &= ~KILL_ON_JOB_CLOSE if `kill_descendants` is `False` and `self.kill_process_tree_on_exit` is `True`
+        #  because jobs only *automatically* execute when *Python* exits (job handle closes), not AutoHotkey by itself.
+
         atexit.unregister(self._on_python_exit)
 
+        exit_code = None
         try:
-            # clean; removes tray icons etc.
-            # OutputDebugString(f"Sending ExitApp from thread {threading.get_ident()}")
-            self._send_message(Script.MSG_EXIT)
-            exit_code = self.popen.wait(timeout)
+            try:
+                # clean; removes tray icons etc.
+                # OutputDebugString(f"Sending ExitApp from thread {threading.get_ident()}")
+                self._send_message(Script.MSG_EXIT)
+            except AhkExitException as ex:  # exited immediately
+                exit_code = ex.args[0]  # for 'finally'
+                raise
+
+            exit_code = self.popen.wait(timeout)  # exited after a delay, before timeout
             raise AhkExitException(exit_code)
-        except TimeoutExpired as ex:
+        except TimeoutExpired as ex:  # never exited before timeout
             self.popen.terminate()
-            raise AhkExitException(1) from ex
+            exit_code = 1
+            raise AhkExitException(exit_code) from ex
+        finally:
+            if kill_descendants:
+                win32job.TerminateJobObject(self.tree_job, exit_code)  # :TerminateJob
