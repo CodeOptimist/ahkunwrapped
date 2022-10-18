@@ -249,7 +249,7 @@ from ahkunwrapped import Script
 # tray icon visibility settings rely on consistent exe paths
 LOCALAPP_DIR = Path(os.getenv('LOCALAPPDATA') / 'pyinstaller-example')
 
-# because working directory could be somewhere else
+# working directory is different between onefile and onedir modes
 #  https://pyinstaller.readthedocs.io/en/stable/runtime-information.html
 CUR_DIR = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
 

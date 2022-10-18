@@ -25,9 +25,9 @@ import win32job
 # noinspection PyUnresolvedReferences
 from win32api import OutputDebugString
 
-# support for PyInstaller
+IN_PYINSTALLER = getattr(sys, 'frozen', False)
 # noinspection PyProtectedMember,PyUnresolvedReferences
-PACKAGE_PATH = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).parent
+PACKAGE_PATH = Path(sys._MEIPASS) if IN_PYINSTALLER else Path(__file__).parent
 SINGLE_JOB_ASSIGNMENTS = sys.getwindowsversion().major < 8  # https://stackoverflow.com/q/13449531/
 if SINGLE_JOB_ASSIGNMENTS:
     import inspect
@@ -337,6 +337,19 @@ class Script:
 
         if ahk_path is None:
             ahk_path = PACKAGE_PATH / r'lib\AutoHotkey\AutoHotkey.exe'
+            if IN_PYINSTALLER and not ahk_path.is_file():
+                raise FileNotFoundError(f"""Couldn't find AutoHotkey at '{ahk_path}'.
+\tEdit your `.spec` file (may have been auto-generated) to contain:
+\t    from pathlib import Path
+\t    import ahkunwrapped
+\t
+\t    a = Analysis(...
+\t        datas=[
+\t            (Path(ahkunwrapped.__file__).parent / 'lib', 'lib'),
+\t            ('your_script.ahk', '.'),  # if using `Script.from_file()`
+\t        ],
+\tAnd pass it to PyInstaller (or it will be overwritten), e.g. `pyinstaller example.spec`.""")
+
         if not ahk_path.is_file():
             raise FileNotFoundError(f"Couldn't find file '{ahk_path}' for `ahk_path`.")
 
