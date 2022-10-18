@@ -18,6 +18,7 @@ from subprocess import TimeoutExpired
 from typing import ClassVar, Mapping, Optional, Sequence, Tuple, Union, ContextManager
 from warnings import warn
 
+import pywintypes
 import win32api
 import win32con
 import win32job
@@ -27,6 +28,9 @@ from win32api import OutputDebugString
 # support for PyInstaller
 # noinspection PyProtectedMember,PyUnresolvedReferences
 PACKAGE_PATH = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).parent
+SINGLE_JOB_ASSIGNMENTS = sys.getwindowsversion().major < 8  # https://stackoverflow.com/q/13449531/
+if SINGLE_JOB_ASSIGNMENTS:
+    import inspect
 
 
 class AhkException(Exception): pass                         # noqa: E701
@@ -69,6 +73,18 @@ class AhkCaughtNonExceptionWarning(AhkWarning):
         if not exception.message:
             message += "\n\tMay have been an AutoHotkey object e.g. {abc: 123} intended for use within 'catch'."
         super().__init__(message)
+
+
+class WinXPJobObjectWarning(AhkWarning):  # for Vista and Windows 7
+    def __init__(self, message: str):
+        message += f"""
+\tRecommend polling within AutoHotkey: https://github.com/CodeOptimist/ahkunwrapped/issues/1
+\tAlternatives: https://stackoverflow.com/q/13471611
+\tThis isn't an issue on Windows 8+ due to nestable jobs."""
+        super().__init__(message)
+
+class AhkExistingWinXPJobObjectWarning(WinXPJobObjectWarning): pass
+class AhkSingleWinXPJobObjectWarning(WinXPJobObjectWarning): pass
 
 
 def comment_debug() -> str:
@@ -380,8 +396,25 @@ class Script:
             finally: win32api.CloseHandle(handle)
 
         with get_handle(win32api.OpenProcess(win32con.PROCESS_TERMINATE | win32con.PROCESS_SET_QUOTA, False, self.popen.pid)) as ahk_handle:  # both flags required
-            win32job.AssignProcessToJobObject(Script.python_job, ahk_handle)  # see :AvoidJobRace
-            win32job.AssignProcessToJobObject(self.tree_job, ahk_handle)  # no race here, AutoHotkey won't `Run` a child process before "Initialized"
+            if SINGLE_JOB_ASSIGNMENTS:
+                try:
+                    has_tree_job = win32job.AssignProcessToJobObject(self.tree_job, ahk_handle)  # the better choice when we can only have 1
+                    win32job.AssignProcessToJobObject(Script.python_job, ahk_handle)  # this will fail
+                except pywintypes.error as ex:
+                    if ex.winerror != 5:
+                        raise
+                    stacklevel = 3 if inspect.currentframe().f_back.f_code.co_name == 'from_file' else 2  # :FromFile
+                    if 'has_tree_job' in locals():
+                        message = f"""Could only assign AutoHotkey (PID {self.popen.pid}) to a single job object: its process tree.
+\tAs such, AutoHotkey will only automatically terminate when Python exits unexpectedly if `kill_process_tree_on_exit` is set `True`."""
+                        warn(AhkSingleWinXPJobObjectWarning(message), stacklevel=stacklevel)
+                    else:
+                        message = f"""Couldn't assign AutoHotkey (PID {self.popen.pid}) to a job object because one was already inherited (breakaway is unlikely to succeed).
+\tAs such, `Script.exit(kill_descendants=True)` and `Script(kill_process_tree_on_exit=True)` have no effect, nor will AutoHotkey terminate if Python exits unexpectedly."""
+                        warn(AhkExistingWinXPJobObjectWarning(message), stacklevel=stacklevel)
+            else:
+                win32job.AssignProcessToJobObject(Script.python_job, ahk_handle)  # this one needs to be first to avoid 'Access denied', also see :AvoidJobRace
+                win32job.AssignProcessToJobObject(self.tree_job, ahk_handle)  # no race here, AutoHotkey won't `Run` a child process before "Initialized"
 
         self.popen.stdin.write(Script.CORE.encode('utf-8'))
         self.popen.stdin.write(self.script.encode('utf-8'))
