@@ -321,12 +321,14 @@ class Script:
 
         if ahk_path is None:
             ahk_path = PACKAGE_PATH / r'lib\AutoHotkey\AutoHotkey.exe'
-        assert ahk_path and ahk_path.is_file()
+        if not ahk_path.is_file():
+            raise FileNotFoundError(f"Couldn't find file '{ahk_path}' for `ahk_path`.")
 
         # Windows notification area relies on consistent exe path
         if execute_from is not None:
             execute_from_dir = Path(execute_from)
-            assert execute_from_dir.is_dir()
+            if not execute_from_dir.is_dir():
+                raise NotADirectoryError(f"Couldn't find folder '{execute_from_dir}' for `execute_from`.")
             ahk_into_folder = execute_from_dir / ahk_path.name
 
             try:
