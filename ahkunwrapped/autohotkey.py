@@ -75,7 +75,7 @@ class AhkCaughtNonExceptionWarning(AhkWarning):
         super().__init__(message)
 
 
-class WinXPJobObjectWarning(AhkWarning):  # for Vista and Windows 7
+class WinXPJobObjectWarning(UserWarning):  # for Vista and Windows 7
     def __init__(self, message: str):
         message += f"""
 \tRecommend polling within AutoHotkey: https://github.com/CodeOptimist/ahkunwrapped/issues/1
@@ -83,8 +83,8 @@ class WinXPJobObjectWarning(AhkWarning):  # for Vista and Windows 7
 \tThis isn't an issue on Windows 8+ due to nestable jobs."""
         super().__init__(message)
 
-class AhkExistingWinXPJobObjectWarning(WinXPJobObjectWarning): pass
-class AhkSingleWinXPJobObjectWarning(WinXPJobObjectWarning): pass
+class ExistingWinXPJobObjectWarning(WinXPJobObjectWarning): pass
+class SingleWinXPJobObjectWarning(WinXPJobObjectWarning): pass
 
 
 def comment_debug() -> str:
@@ -420,11 +420,11 @@ class Script:
                     if 'has_tree_job' in locals():
                         message = f"""Could only assign AutoHotkey (PID {self.popen.pid}) to a single job object: its process tree.
 \tAs such, AutoHotkey will only automatically terminate when Python exits unexpectedly if `kill_process_tree_on_exit` is set `True`."""
-                        warn(AhkSingleWinXPJobObjectWarning(message), stacklevel=stacklevel)
+                        warn(SingleWinXPJobObjectWarning(message), stacklevel=stacklevel)
                     else:
                         message = f"""Couldn't assign AutoHotkey (PID {self.popen.pid}) to a job object because one was already inherited (breakaway is unlikely to succeed).
 \tAs such, `Script.exit(kill_descendants=True)` and `Script(kill_process_tree_on_exit=True)` have no effect, nor will AutoHotkey terminate if Python exits unexpectedly."""
-                        warn(AhkExistingWinXPJobObjectWarning(message), stacklevel=stacklevel)
+                        warn(ExistingWinXPJobObjectWarning(message), stacklevel=stacklevel)
             else:
                 win32job.AssignProcessToJobObject(Script.python_job, ahk_handle)  # this one needs to be first to avoid 'Access denied', also see :AvoidJobRace
                 win32job.AssignProcessToJobObject(self.tree_job, ahk_handle)  # no race here, AutoHotkey won't `Run` a child process before "Initialized"
