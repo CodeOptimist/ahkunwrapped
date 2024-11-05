@@ -103,15 +103,14 @@ class Script:
     MSG_MORE: ClassVar[int] = 0x8005
     MSG_EXIT: ClassVar[int] = 0x8006
 
-    SEPARATOR: ClassVar[str] = '\3'
-    EOM_MORE: ClassVar[str] = SEPARATOR * 2
-    EOM_END: ClassVar[str] = SEPARATOR * 3
+    SEPARATOR: ClassVar[str] = '\3'  # :Separator
 
     BUFFER_SIZE: ClassVar[int] = 4096
-    BUFFER_W_MORE_SIZE: ClassVar[int] = BUFFER_SIZE - len(EOM_MORE) * 2 - len('\n') - 1  # :SingleByteNewline
-    assert BUFFER_W_MORE_SIZE % 2 == 0  # utf-16 is 2 bytes
-    BUFFER_W_END_SIZE: ClassVar[int] = BUFFER_SIZE - len(EOM_END) * 2 - len('\n') - 1
-    assert BUFFER_W_END_SIZE % 2 == 0
+    # we read one line at a time, but need a unique reserved character
+    #  to signify the end of message, and not just a newline within it
+    EOM = SEPARATOR.encode('utf-16-le') + b'\n'  # :Eom :OneByteNewline
+    EOM_SIZE = 1 + len(EOM)  # include :IsFinal bool
+    TEXT_SIZE: ClassVar[int] = BUFFER_SIZE - EOM_SIZE
 
     python_pid: ClassVar = os.getpid()
     python_job: ClassVar = None
@@ -126,24 +125,24 @@ class Script:
     #NoTrayIcon
     #Persistent
     SetWorkingDir, ''' + os.getcwd() + '''
-    _PY_SEPARATOR := ''' + f'Chr({ord(SEPARATOR)})' + '''
+    _PY_SEPARATOR := Chr(''' + str(ord(SEPARATOR)) + ''')
+    _PY_EOM_BYTES := Chr(1) "`n"  ; internally as 01 00 10 00  :Utf16Internals
     ; Let's write variables as they're stored, avoiding `StrPut()`.
     ; https://www.autohotkey.com/docs/v1/Concepts.htm#string-encoding
     _pyStdOut := FileOpen("*", "w", "utf-16-raw")
     _pyStdErr := FileOpen("**", "w", "utf-16-raw")
     
     _Py_Response(ByRef pipe, ByRef text, ByRef offset, ByRef onMain) {
+        global _PY_SEPARATOR, _PY_EOM_BYTES
         textSize := Max(StrLen(text) * 2 + StrLen(Chr(0)) * 2 - offset, 0)
-        isEnd := onMain or textSize <= ''' + str(BUFFER_W_END_SIZE) + '''
-        ;MsgBox % "offset: " offset " textSize: " textSize " isEnd: " isEnd
+        isFinal := onMain or textSize <= ''' + str(TEXT_SIZE) + '''
+        ;MsgBox % "offset: " offset " textSize: " textSize " isFinal: " isFinal
         
-        pipe.RawWrite(&text + offset, isEnd ? textSize : ''' + str(BUFFER_W_MORE_SIZE) + ''')
-        if (isEnd)
-            pipe.Write(''' + ' '.join(f'Chr({ord(c)})' for c in EOM_END) + ''')
-        else
-            pipe.Write(''' + ' '.join(f'Chr({ord(c)})' for c in EOM_MORE) + ''')
-        newLine := "`n"
-        pipe.RawWrite(newLine, 1)  ; :SingleByteNewline
+        pipe.RawWrite(&text + offset, isFinal ? textSize : ''' + str(TEXT_SIZE) + ''')
+        pipe.RawWrite(&_PY_EOM_BYTES + (isFinal ? +0 : +1), 1)  ; :Utf16Internals :IsFinal
+        pipe.Write(_PY_SEPARATOR)  ; :Eom
+        pipe.RawWrite(&_PY_EOM_BYTES +2, 1)  ; :OneByteNewline
+        
         pipe.Read(0)
     }
   
@@ -152,7 +151,7 @@ class Script:
         SetBatchLines, -1
         ''' + comment_debug() + '''DebugMsg(wParam, msg)
        
-        numRead := ''' + str(BUFFER_W_MORE_SIZE) + '''
+        numRead := ''' + str(TEXT_SIZE) + '''
         _Py_Response(_pyStdOut, _pyOutText, _pyOutOffset += numRead, False)
         _Py_Response(_pyStdErr, _pyErrText, _pyErrOffset += numRead, False)
         return 1  ; :MsgReturn
@@ -471,33 +470,26 @@ class Script:
         return script
 
     def _read_pipes(self) -> Tuple[str, str]:
-        more = bytes(Script.EOM_MORE, 'utf-16-le') + b'\n'  # :SingleByteNewline
-        end = bytes(Script.EOM_END, 'utf-16-le') + b'\n'
-
         err, out = bytearray(), bytearray()
         while True:
-            def has_all(bytearray_: bytearray) -> bool:
+            def end_of_message(bytearray_: bytearray) -> bool:
                 self.poll()
-                return bytearray_.endswith(end) or bytearray_.endswith(more)
+                return bytearray_.endswith(Script.EOM)  # :Eom
 
             # we're careful not to over-read into the next response,
-            # but we can at least go line by line since we end with \n
+            # but we can at least go line by line since we always end with \n
             err_buffer, out_buffer = bytearray(), bytearray()
-            while not has_all(out_buffer):
-                out_buffer += self.popen.stdout.readline()  # :SingleByteNewline
-            while not has_all(err_buffer):
+            while not end_of_message(out_buffer):
+                out_buffer += self.popen.stdout.readline()  # :OneByteNewline
+            while not end_of_message(err_buffer):
                 err_buffer += self.popen.stderr.readline()
 
-            is_end = out_buffer.endswith(end) and err_buffer.endswith(end)
+            err += err_buffer[:-Script.EOM_SIZE]  # : Eom
+            out += out_buffer[:-Script.EOM_SIZE]
 
-            def strip_eom(buffer) -> str:
-                head, sep, tail = buffer.rpartition(end)
-                return head if sep else buffer.rpartition(more)[0]
-
-            err += strip_eom(err_buffer)
-            out += strip_eom(out_buffer)
-
-            if is_end:
+            bool_pos = -Script.EOM_SIZE
+            is_final = out_buffer[bool_pos] and err_buffer[bool_pos]  # :IsFinal
+            if is_final:
                 break
             self._send_message(Script.MSG_MORE)
         if self.lock is not None:
