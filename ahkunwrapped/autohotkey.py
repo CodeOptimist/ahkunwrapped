@@ -155,7 +155,7 @@ class Script:
         numRead := ''' + str(BUFFER_W_MORE_SIZE) + '''
         _Py_Response(_pyStdOut, _pyOutText, _pyOutOffset += numRead, False)
         _Py_Response(_pyStdErr, _pyErrText, _pyErrOffset += numRead, False)
-        return 1
+        return 1  ; :MsgReturn
     }
      
     ; we can't peek() stdout/stderr, so always write to both or we will over-read and hang waiting
@@ -163,13 +163,12 @@ class Script:
         global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset
         _Py_Response(_pyStdOut, _pyOutText := outText, _pyOutOffset := 0, onMain)
         _Py_Response(_pyStdErr, _pyErrText := "", _pyErrOffset := 0, onMain)
-        return 1
     }
+    
     _Py_StdErr(ByRef name, ByRef errText, onMain := False) {
         global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset, _PY_SEPARATOR
         _Py_Response(_pyStdOut, _pyOutText := "", _pyOutOffset := 0, onMain)
         _Py_Response(_pyStdErr, _pyErrText := name _PY_SEPARATOR errText, _pyErrOffset := 0, onMain)
-        return 1
     }
     
     _Py_MsgCopyData(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
@@ -198,7 +197,7 @@ class Script:
                 val := val == "True" ? 1 : 0    ; same as True/False
             _pyThreadMsgData[wParam].Push(val)
         }
-        return 1
+        return 1  ; :MsgReturn
     }
     
     ; call on main thread, much worse latency but may be necessary for DllCall() to avoid:
@@ -216,7 +215,7 @@ class Script:
         ; continue on main thread at below label
         ;  ordinarily a new message can interrupt this, but none will be sent because of our lock
         SetTimer, _Py_MsgFMain, -0 ; negative for one-time, and 0 is indeed quicker than 1
-        return 1
+        return 1  ; :MsgReturn
     }
     
     _Py_MsgF(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd, ByRef onMain := False) {
@@ -228,7 +227,8 @@ class Script:
         func := _pyThreadMsgData[wParam].RemoveAt(1)
         if (not IsFunc(func)) {
             _pyThreadMsgData.Delete(wParam)
-            return _Py_StdErr("''' + AhkFuncNotFoundError.__name__ + '''", func, onMain)
+            _Py_StdErr("''' + AhkFuncNotFoundError.__name__ + '''", func, onMain)
+            return 1  ; :MsgReturn
         }
         needResult := _pyThreadMsgData[wParam].RemoveAt(1)
 
@@ -248,14 +248,17 @@ class Script:
             if (!isExceptionObj)
                 e := {Message: e}
             
-            return _Py_StdErr("''' + AhkUserException.__name__ + '''"
+            ;MsgBox, % "Message`n" e.Message "`n`nWhat`n" e.What "`n`nExtra`n" e.Extra "`n`nFile`n" e.File "`n`nLine`n" e.Line
+            _Py_StdErr("''' + AhkUserException.__name__ + '''"
                 , isExceptionObj _PY_SEPARATOR e.Message _PY_SEPARATOR e.What _PY_SEPARATOR e.Extra _PY_SEPARATOR e.File _PY_SEPARATOR e.Line
                 , onMain)
+            return 1  ; :MsgReturn
         }
         
         SetBatchLines, -1
         _pyThreadMsgData.Delete(wParam)
-        return _Py_StdOut(needResult ? result : "", onMain)
+        _Py_StdOut(needResult ? result : "", onMain)
+        return 1  ; :MsgReturn
     }
     
     _Py_MsgGet(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
@@ -265,7 +268,8 @@ class Script:
         name := _pyThreadMsgData[wParam].RemoveAt(1)
         val := %name%
         _pyThreadMsgData.Delete(wParam)
-        return _Py_StdOut(val)
+        _Py_StdOut(val)
+        return 1  ; :MsgReturn
     }
     
     _Py_MsgSet(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
@@ -275,12 +279,12 @@ class Script:
         name := _pyThreadMsgData[wParam].RemoveAt(1)
         %name% := _pyThreadMsgData[wParam].RemoveAt(1)
         _pyThreadMsgData.Delete(wParam)
-        return 1
+        return 1  ; :MsgReturn
     }
     
     _Py_MsgExit() {
         ExitApp
-        return 1 ; required even after ExitApp
+        return 1  ; required even after ExitApp :MsgReturn
     }
     
     DebugMsg(wParam, msg) {
@@ -292,6 +296,7 @@ class Script:
     _pyMsgFMainData := []
     
     ; these all must return non-zero to signal completion
+    ; https://www.autohotkey.com/docs/v1/lib/OnMessage.htm#What_the_Callback_Should_Return  :MsgReturn
     OnMessage(''' + str(win32con.WM_COPYDATA) + ''', Func("_Py_MsgCopyData"))
     OnMessage(''' + str(MSG_GET) + ''', Func("_Py_MsgGet"))
     OnMessage(''' + str(MSG_SET) + ''', Func("_Py_MsgSet"))
