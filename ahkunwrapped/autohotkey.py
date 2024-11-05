@@ -332,10 +332,10 @@ class Script:
 
         :param script: Actual AutoHotkey script. Optional if you only need built-in functions and variables.
         :param ahk_path: Path to an alternative AutoHotkey executable than the one included (`ahk.get('A_AhkVersion')`).
-        :param execute_from: Path AutoHotkey executable will be hard-linked/copied to, for the benefit of individual show/hide status in system tray.
+        :param execute_from: Path AutoHotkey executable will be hard-linked/copied to, for the benefit of remembered show/hide status in system tray.
         :param kill_process_tree_on_exit: Descendants of AutoHotkey process will inherit its win32 job object and terminate with it.
             `Script.exit()` (an intentional exit) can override this.
-            *Caution*: Universal Windows Platform (UWP) apps (e.g. Windows 10's notepad.exe and calc.exe) discard our job object;
+            *Caution*: Universal Windows Platform (UWP) apps (e.g. Windows 10+'s notepad.exe and calc.exe) discard our job object;
             suggest using AutoHotkey's `OnExit()` in those cases: https://github.com/CodeOptimist/ahkunwrapped/issues/1
         """
         self.file = None
@@ -347,15 +347,15 @@ class Script:
             if IN_PYINSTALLER and not ahk_path.is_file():
                 raise FileNotFoundError(f"""Couldn't find AutoHotkey at '{ahk_path}'.
 \tEdit your `.spec` file (may have been auto-generated) to contain:
-\t    from pathlib import Path
-\t    import ahkunwrapped
+\t    from pathlib import Path                                      # add these to the top
+\t    import ahkunwrapped                                           # add these to the top
 \t
-\t    a = Analysis(...
-\t        datas=[
-\t            (Path(ahkunwrapped.__file__).parent / 'lib', 'lib'),
-\t            ('your_script.ahk', '.'),  # if using `Script.from_file()`
+\t    a = Analysis(
+\t        datas=[                                                   # find this
+\t            (Path(ahkunwrapped.__file__).parent / 'lib', 'lib'),  # add this
+\t            ('your_script.ahk', '.'),                             # add this if using `Script.from_file()`
 \t        ],
-\tAnd pass it to PyInstaller (or it will be overwritten), e.g. `pyinstaller example.spec`.""")
+\tAnd run it directly: `pyinstaller example.spec` or it will be overwritten (undoing your changes).""")
 
         if not ahk_path.is_file():
             raise FileNotFoundError(f"Couldn't find file '{ahk_path}' for `ahk_path`.")
@@ -424,8 +424,8 @@ class Script:
                         raise
                     stacklevel = 3 if inspect.currentframe().f_back.f_code.co_name == 'from_file' else 2  # :FromFile
                     if 'has_tree_job' in locals():
-                        message = f"""Could only assign AutoHotkey (PID {self.popen.pid}) to a single job object: its process tree.
-\tAs such, AutoHotkey will only automatically terminate when Python exits unexpectedly if `kill_process_tree_on_exit` is set `True`."""
+                        message = f"""Couldn't assign AutoHotkey (PID {self.popen.pid}) to Python job object because already assigned to tree job object.
+\tAs such, AutoHotkey won't automatically terminate when Python exits unexpectedly unless `kill_process_tree_on_exit` is set `True`."""
                         warn(SingleWinXPJobObjectWarning(message), stacklevel=stacklevel)
                     else:
                         message = f"""Couldn't assign AutoHotkey (PID {self.popen.pid}) to a job object because one was already inherited (breakaway is unlikely to succeed).
@@ -655,7 +655,7 @@ class Script:
         To my knowledge only an `OnExit()` callback could delay this.
 
         :param timeout: Seconds to wait before terminating. `None` for infinity.
-        :param kill_descendants: Uses `Script()`'s `kill_process_tree_on_exit` (default `False`) unless overriden here.
+        :param kill_descendants: Uses `Script()`'s `kill_process_tree_on_exit` (default `False`) unless overridden here.
         """
 
         if kill_descendants is None:
