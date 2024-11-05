@@ -120,13 +120,15 @@ class Script:
     _pyUserBatchLines := A_BatchLines
     SetBatchLines, -1
     Process, Exist, ''' + str(python_pid) + '''
-    if (ErrorLevel = 0)
+    if (ErrorLevel = 0) ; not found
         ExitApp ; https://stackoverflow.com/q/73506891/#comment129808240_73506891 :AvoidJobRace
     #NoEnv
     #NoTrayIcon
     #Persistent
     SetWorkingDir, ''' + os.getcwd() + '''
     _PY_SEPARATOR := ''' + f'Chr({ord(SEPARATOR)})' + '''
+    ; Let's write variables as they're stored, avoiding `StrPut()`.
+    ; https://www.autohotkey.com/docs/v1/Concepts.htm#string-encoding
     _pyStdOut := FileOpen("*", "w", "utf-16-raw")
     _pyStdErr := FileOpen("**", "w", "utf-16-raw")
     
@@ -178,18 +180,18 @@ class Script:
         ;dataTypeId := NumGet(lParam + 0*A_PtrSize) ; unneeded atm
         dataSize := NumGet(lParam + 1*A_PtrSize)
         strAddr := NumGet(lParam + 2*A_PtrSize)
-        ; limitation of StrGet(): data is truncated after \\0
+        ; limitation of StrGet(): data is truncated after \\0 :NullTerminator
         data := StrGet(strAddr, dataSize, "utf-8")
         ; OutputDebug, Received: '%data%'
         
-        ; Since messages can arrive from multiple threads—e.g. clicking 'Reload' within OBS Studio 'Scripts' window,
-        ;  while a timer is also running within said script—we need to keep their input data separate.
+        ; Since messages can arrive from multiple threads (e.g. clicking 'Reload' within OBS Studio 'Scripts' window,
+        ;  while a timer is also running within said script) we need to keep their input data separate.
         _pyThreadMsgData[wParam] := []
-        ; limitation of Parse and StrSplit(): separator must be a single character
+        ; limitation of Parse and StrSplit(): separator must be a single character :Separator
         Loop, Parse, data, % _PY_SEPARATOR
         {
             ; see Python function _to_ahk_str()
-            type := RTrim(SubStr(A_LoopField, 1, 5))
+            type := RTrim(SubStr(A_LoopField, 1, 5))  ; :TypePrefix
             val := SubStr(A_LoopField, 7)
             ; others are automatic
             if (type = "bool")
@@ -199,7 +201,7 @@ class Script:
         return 1
     }
     
-    ; call on main thread, much slower but may be necessary for DllCall() to avoid:
+    ; call on main thread, much worse latency but may be necessary for DllCall() to avoid:
     ;   Error 0x8001010d An outgoing call cannot be made since the application is dispatching an input-synchronous call.
     _Py_MsgFMain(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         global _pyMsgFMainData
@@ -314,8 +316,8 @@ class Script:
         _Py_MsgF(_pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), True)
     return
     
-    ; an unused label so #Warn won't complain that the user script's auto-execute section is unreachable
-    ; it is intentionally unreachable (we use AutoExec() instead) so scripts can run exclusive standalone code
+    ; an unused label so #Warn won't complain that the script's auto-execute section is unreachable
+    ; it is intentionally unreachable (we use `AutoExec()` instead) so scripts can run exclusive standalone code
     _Py_SuppressUnreachableWarning:
     AutoTrim, % A_AutoTrim          ; does nothing and never called, but makes label happy
     '''
@@ -353,7 +355,6 @@ class Script:
         if not ahk_path.is_file():
             raise FileNotFoundError(f"Couldn't find file '{ahk_path}' for `ahk_path`.")
 
-        # Windows notification area relies on consistent exe path
         if execute_from is not None:
             execute_from_dir = Path(execute_from)
             if not execute_from_dir.is_dir():
@@ -379,13 +380,13 @@ class Script:
 
         # user script exceptions are already caught and sent to stderr, so /ErrorStdOut would only affect debugging CORE
         # self.cmd = [str(ahk_path), "/ErrorStdOut=utf-16-raw", "/CP65001", "*"]
-        self.cmd = [str(ahk_path), "/CP65001", "*"]
+        self.cmd = [str(ahk_path), "/CP65001", "*"]  # utf-8 :StdInEncoding
 
         self.popen = subprocess.Popen(self.cmd, bufsize=Script.BUFFER_SIZE, executable=str(ahk_path),
                                       # must pipe all three for PyInstaller onefile exe
                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        # NOTE: PROCESS EXPLORER WILL SHOW ONE OR THE OTHER JOB BUT NOT BOTH @Chris 2022-10
+        # NOTE: PROCESS EXPLORER WILL MISLEAD BY SHOWING ONE OR THE OTHER JOB BUT NOT BOTH @CodeOptimist 2022-10
         # https://learn.microsoft.com/en-gb/windows/win32/api/winbase/nf-winbase-createjobobjecta
         # job containing all AutoHotkey processes to terminate with Python
         Script.python_job = win32job.CreateJobObject(None, f"ahkUnwrapped:python.exe:{Script.python_pid}")  # will find existing or create
@@ -394,7 +395,7 @@ class Script:
         extended_info['BasicLimitInformation']['LimitFlags'] = win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | win32job.JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK
         win32job.SetInformationJobObject(Script.python_job, win32job.JobObjectExtendedLimitInformation, extended_info)
 
-        # Both job objects "execute" when their last handle closes (Python exits), but here KILL_ON_JOB_CLOSE (for descendants) is optional.
+        # Both job objects terminate when their last handle closes (Python exits), but here KILL_ON_JOB_CLOSE (for descendants) is optional.
         # Separately, we can force terminate at any time. :TerminateJob
         self.tree_job = win32job.CreateJobObject(None, f"ahkUnwrapped:AutoHotkey.exe:{self.popen.pid}")  # new job for descendants (and ourself)
         extended_info = win32job.QueryInformationJobObject(self.tree_job, win32job.JobObjectExtendedLimitInformation)
@@ -429,6 +430,7 @@ class Script:
                 win32job.AssignProcessToJobObject(Script.python_job, ahk_handle)  # this one needs to be first to avoid 'Access denied', also see :AvoidJobRace
                 win32job.AssignProcessToJobObject(self.tree_job, ahk_handle)  # no race here, AutoHotkey won't `Run` a child process before "Initialized"
 
+        # variable length utf-8 is fine here :StdInEncoding
         self.popen.stdin.write(Script.CORE.encode('utf-8'))
         self.popen.stdin.write(self.script.encode('utf-8'))
         self.popen.stdin.close()
@@ -454,7 +456,10 @@ class Script:
         with path.open(encoding='utf-8') as f:
             script = f.read()
         if format_dict is not None:
-            script = script.replace(r'{', r'{{').replace(r'}', r'}}').replace(r'{{{', r'').replace(r'}}}', r'')
+            # `format()` will mistake function braces as placeholders, so escape those first
+            script = script.replace(r'{', r'{{').replace(r'}', r'}}')  # {foo} -> {{foo}}
+            # we instead support double braces, so make them single for `format()`
+            script = script.replace(r'{{{', r'').replace(r'}}}', r'')  # {{bar}} -> {{{{bar}}}} -> {bar}
             script = script.format(**format_dict)
         script = Script(script, ahk_path, execute_from, kill_process_tree_on_exit)
         script.file = path  # for exceptions
@@ -525,7 +530,7 @@ class Script:
 
     # https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendmessage
     def _send_message(self, msg: int, lparam: bytes = None) -> None:
-        # this is essential because messages are ignored if uninterruptible (e.g. in menu)
+        # this is essential because messages are ignored if we're uninterruptible (e.g. in a menu)
         # wparam is normally source window handle, but in our case source thread id
         while not win32api.SendMessage(self.hwnd, msg, threading.get_ident(), lparam):
             self.poll()
@@ -540,7 +545,7 @@ class Script:
         data_type_id = msg  # anything; unneeded atm
         struct_ = struct.pack('PLP', data_type_id, size, addr)
         self._send_message(win32con.WM_COPYDATA, struct_)
-        self.lock.acquire(blocking=True)  # False to witness test failure
+        self.lock.acquire(blocking=True)  # set `False` to witness threads test failure
         self._send_message(msg)
 
     @staticmethod
@@ -554,12 +559,12 @@ class Script:
             val_str = val_str.rstrip('0').rstrip('.')  # less text to send the better
         else:
             if isinstance(val, str):
-                if '\x00' in val:
+                if '\x00' in val:  # :NullTerminator
                     raise AhkUnsupportedValueError(r"string contains null terminator '\x00' which AutoHotkey ignores characters beyond")
-                if Script.SEPARATOR in val:
+                if Script.SEPARATOR in val:  # :Separator
                     raise AhkUnsupportedValueError(f'string contains {repr(Script.SEPARATOR)} which is reserved for messages to AutoHotkey')
             val_str = str(val)
-        return f"{type(val).__name__[:5]:<5} {val_str}"
+        return f"{type(val).__name__[:5]:<5} {val_str}"  # padded len(5) :TypePrefix
 
     def _f(self, msg: int, name: str, *args: Primitive, need_result: bool, coerce_result: bool = False) -> Optional[str]:
         self._send(msg, [name, need_result] + list(args))
@@ -624,7 +629,7 @@ class Script:
         # Every _send() will lock, so others are finished before we set().
         #  We don't need a confirmation response, just the ensurance that it finishes before others begin.
         self._send(Script.MSG_SET, [name, val])
-        self.lock.release()
+        self.lock.release()  # normally done within `_read_response()`
 
     # if AutoHotkey is terminated, get error code
     def poll(self) -> None:
@@ -651,8 +656,8 @@ class Script:
         if kill_descendants is None:
             kill_descendants = self.kill_process_tree_on_exit
 
-        # No need to &= ~KILL_ON_JOB_CLOSE if `kill_descendants` is `False` and `self.kill_process_tree_on_exit` is `True`
-        #  because jobs only *automatically* execute when *Python* exits (job handle closes), not AutoHotkey by itself.
+        # No need to `&= ~KILL_ON_JOB_CLOSE` if `kill_descendants` is `False` and `self.kill_process_tree_on_exit` is `True`
+        #  because jobs only *automatically* terminate when *Python* exits (job handle closes), not AutoHotkey by itself.
 
         atexit.unregister(self._on_python_exit)
 
@@ -666,8 +671,8 @@ class Script:
                 exit_code = ex.args[0]  # for 'finally'
                 raise
 
-            exit_code = self.popen.wait(timeout)  # exited after a delay, before timeout
-            raise AhkExitException(exit_code)
+            exit_code = self.popen.wait(timeout)
+            raise AhkExitException(exit_code)  # exited after a delay, before timeout
         except TimeoutExpired as ex:  # never exited before timeout
             self.popen.terminate()
             exit_code = 1
