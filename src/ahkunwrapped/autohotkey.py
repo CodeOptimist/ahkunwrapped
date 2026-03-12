@@ -515,7 +515,7 @@ class Script:
         data_type_id = msg  # anything; unneeded atm
         struct_ = struct.pack('PLP', data_type_id, size, addr)
         self._send_message(win32con.WM_COPYDATA, struct_)
-        self.lock.acquire(blocking=True)  # set `False` to witness threads test failure
+        self.lock.acquire(blocking=True)  # set `False` to witness threads test failure :TestThreads
         self._send_message(msg)
 
     @staticmethod

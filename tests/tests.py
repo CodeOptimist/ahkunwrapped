@@ -121,7 +121,7 @@ def test_nonexception_warning_for_contrived():
             ahk.call(f'ContrivedException')
 
 
-# if fail, adjust its stacklevel=
+# if fail, adjust its `stacklevel=`
 def test_nonexception_warning_lineno():
     for i in range(1, 4):
         with warnings.catch_warnings(record=True) as w:
@@ -130,7 +130,7 @@ def test_nonexception_warning_lineno():
             assert w[0].filename == getframeinfo(currentframe()).filename and w[0].lineno == currentframe().f_lineno - 1
 
 
-# if fail, adjust its stacklevel=
+# if failed, adjust its `stacklevel=`
 def test_warning_lineno():
     with warnings.catch_warnings(record=True) as w:
         ahk.call('_Py_StdErr', autohotkey.AhkWarning.__name__, "some generic warning")  # get directly because unused atm
@@ -140,8 +140,8 @@ def test_warning_lineno():
         ahk.popen.stderr.readline()
 
 
-# warning covered in test_float()
-# if fail, adjust its stacklevel=
+# warning covered in `test_float()`
+# if failed, adjust its `stacklevel=`
 def test_precisionwarning_lineno():
     with warnings.catch_warnings(record=True) as w:
         echo(1 / 3)  # AhkLossOfPrecisionWarning
@@ -278,17 +278,16 @@ def test_kill_uwp_descendants():
         os.kill(kill_pid, signal.SIGTERM)
 
 
-# Recommend DebugView++ to view OutputDebugString https://github.com/CobaltFusion/DebugViewPP/releases
-#  Have to manually kill this test if it takes longer than 5 seconds, hypothesis 'deadline' doesn't seem to help.
-#   https://docs.pytest.org/en/latest/how-to/failures.html#warning-about-unraisable-exceptions-and-unhandled-thread-exceptions
-def test_threads_5sec():
+# Recommend DebugView++ to view OutputDebugString: `winget install DebugViewPP`
+def test_threads_3sec():  # :TestThreads
+    # "you must raise the exception back on pytest's main thread"
     #  https://stackoverflow.com/a/50935020/879
     exception = None
 
     def thread():
         nonlocal exception
         try:
-            end_time = time.time() + 5
+            end_time = time.time() + 3
             while time.time() < end_time:
                 f = random.choice((echo, echo_main))
                 # to throw in some MSG_MORE
@@ -305,7 +304,8 @@ def test_threads_5sec():
     for t in threads:
         t.start()
     for t in threads:
-        t.join()
+        # https://docs.pytest.org/en/latest/how-to/failures.html#warning-about-unraisable-exceptions-and-unhandled-thread-exceptions
+        t.join(timeout=5.0)  # 5-second timeout
     OutputDebugString("THREADS FINISHED")
     if exception:
         raise exception
