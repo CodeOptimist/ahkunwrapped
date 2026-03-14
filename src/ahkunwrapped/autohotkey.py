@@ -7,7 +7,6 @@ import io
 import math
 import os
 import shutil
-import string
 import struct
 import subprocess
 import sys
@@ -35,8 +34,10 @@ _IN_PYINSTALLER: Final = getattr(sys, 'frozen', False)
 _PACKAGE_PATH: Final = Path(sys._MEIPASS) if _IN_PYINSTALLER else Path(__file__).parent
 _SINGLE_JOB_ASSIGNMENTS: Final = sys.getwindowsversion().major < 8  # https://stackoverflow.com/q/13449531/
 assert not _SINGLE_JOB_ASSIGNMENTS
+_INT64_MIN: Final = -(1 << 63)
+_INT64_MAX: Final = (1 << 63) - 1
 
-type Primitive = bool | float | int | str
+type Primitive = float | int | bool | str
 
 
 # @formatter:off
@@ -48,11 +49,6 @@ class AhkUnsupportedValueError(AhkError): pass              # noqa: E701
 class AhkCantCallOutInInputSyncCallError(AhkError): pass    # noqa: E701
 class AhkWarning(UserWarning): pass                         # noqa: E701
 # @formatter:on
-
-
-class AhkLossOfPrecisionWarning(AhkWarning):
-    def __init__(self, val: float, val_str: str):
-        super().__init__(f'loss of precision from {val} to {val_str}')
 
 
 @dataclass
@@ -116,8 +112,8 @@ class Script:
     A_WorkingDir := "''' + os.getcwd() + '''"
     _PY_SEPARATOR := Chr(''' + str(ord(SEPARATOR)) + ''')
     _PY_EOM_BYTES := Chr(1) "`n"  ; internally as 01 00 10 00  :Utf16Internals
-    ; Let's write variables as they're stored, avoiding `StrPut()`.
-    ; https://www.autohotkey.com/docs/v1/Concepts.htm#string-encoding
+    ; Let's write strings as they're stored, avoiding `StrPut()`.
+    ; https://www.autohotkey.com/docs/v2/Concepts.htm#string-encoding
     _pyStdOut := FileOpen("*", "w", "utf-16-raw")
     _pyStdErr := FileOpen("**", "w", "utf-16-raw")
 
@@ -127,7 +123,7 @@ class Script:
         isFinal := onMain or textSize <= ''' + str(_TEXT_SIZE) + '''
         ;MsgBox("offset: " offset " textSize: " textSize " isFinal: " isFinal)
 
-        pipe.RawWrite(StrPtr(String(text)) + offset, isFinal ? textSize : ''' + str(_TEXT_SIZE) + ''')
+        pipe.RawWrite(StrPtr(text) + offset, isFinal ? textSize : ''' + str(_TEXT_SIZE) + ''')
         pipe.RawWrite(StrPtr(_PY_EOM_BYTES) + (isFinal ? + 0 : + 1), 1)  ; :Utf16Internals :IsFinal
         pipe.Write(_PY_SEPARATOR)  ; :Eom
         pipe.RawWrite(StrPtr(_PY_EOM_BYTES) + 2, 1)  ; :OneByteNewline
@@ -165,7 +161,6 @@ class Script:
         ;dataTypeId := NumGet(lParam, 0*A_PtrSize, "Int64") ; unneeded atm
         dataSize := NumGet(lParam, 1*A_PtrSize, "UInt")
         strAddr := NumGet(lParam, 2*A_PtrSize, "Ptr")
-        ; limitation of StrGet(): data is truncated after \\0 :NullTerminator
         data := StrGet(strAddr, dataSize, "utf-8")
         ;OutputDebug("Received: '" data "'")
 
@@ -173,14 +168,18 @@ class Script:
         ;  while a timer is also running within said script) we need to keep their input data separate.
         _pyThreadMsgData[wParam] := []
         ; limitation of Parse and StrSplit(): separator must be a single character :Separator
-        Loop Parse data, _PY_SEPARATOR
+        Loop Parse, data, _PY_SEPARATOR
         {
-            ; see Python function _to_ahk_str()
-            _type := RTrim(SubStr(A_LoopField, 1, 5))  ; :TypePrefix
-            val := SubStr(A_LoopField, 7)
-            ; others are automatic
-            if (_type = "bool")
-                val := val == "True" ? 1 : 0    ; same as True/False
+            ; see Python function `_to_ahk_str()`
+            _type := SubStr(A_LoopField, 1, 1)  ; :TypePrefix
+            val := SubStr(A_LoopField, 2)
+
+            if (_type = "f")
+                val := Float(val)
+            else if (_type = "i")
+                val := Integer(val)
+            else if (_type = "b")
+                val := (val == "1")
             _pyThreadMsgData[wParam].Push(val)
         }
         return 1  ; :MsgReturn
@@ -229,7 +228,7 @@ class Script:
         }
 
         _pyThreadMsgData.Delete(wParam)
-        _Py_StdOut(needResult ? result : "", onMain)
+        _Py_StdOut(needResult ? SubStr(Type(result), 1, 1) . String(result) : "", onMain)
         return 1  ; :MsgReturn
     }
 
@@ -239,7 +238,7 @@ class Script:
         name := _pyThreadMsgData[wParam].RemoveAt(1)
         val := %name%
         _pyThreadMsgData.Delete(wParam)
-        _Py_StdOut(val)
+        _Py_StdOut(SubStr(Type(val), 1, 1) . String(val))
         return 1  ; :MsgReturn
     }
 
@@ -275,10 +274,8 @@ class Script:
     OnMessage(''' + str(_Msg.MORE) + '''            , _Py_MsgMore)
     OnMessage(''' + str(_Msg.EXIT) + '''            , _Py_MsgExit)
 
-    _Py_StdOut(A_ScriptHwnd)
-
+    _Py_StdOut(String(A_ScriptHwnd))
     try %"Startup"%() ; call if exists
-
     _Py_StdOut("Initialized")
     return
 
@@ -457,16 +454,16 @@ class Script:
                         if exception.message == "2147549453":
                             exception.message = "(0x8001010D) An outgoing call cannot be made since the application is dispatching an input-synchronous call."
                         if exception.message.startswith("(0x8001010D)"):
-                            outer_msg = "Failed a remote procedure call from OnMessage() thread. Solve this with f_main(), call_main() or f_raw_main()."
+                            outer_msg = "Failed a remote procedure call from `OnMessage()` thread. Solve this with `f_main()`, or `call_main()`."
                             raise AhkCantCallOutInInputSyncCallError(outer_msg) from exception
                     else:
-                        warn(AhkCaughtNonExceptionWarning(exception), stacklevel=4)
+                        warn(AhkCaughtNonExceptionWarning(exception), stacklevel=5)
                 raise exception
 
             warning_class = next((w for w in (*AhkWarning.__subclasses__(), AhkWarning) if w.__name__ == name), None)
             if warning_class:
                 warning = warning_class(*args.split(Script.SEPARATOR))
-                warn(warning, stacklevel=4)
+                warn(warning, stacklevel=5)
 
         return out
 
@@ -497,23 +494,21 @@ class Script:
         if isinstance(val, float):
             if math.isnan(val) or math.isinf(val):
                 raise AhkUnsupportedValueError(val)
-            val_str = f'{val:.6f}'  # 6 decimal precision to match AutoHotkey
-            if float(val_str) != val:
-                warn(AhkLossOfPrecisionWarning(val, val_str), stacklevel=6)
-            val_str = val_str.rstrip('0').rstrip('.')  # less text to send the better
-        else:
-            if isinstance(val, str):
-                if '\x00' in val:  # :NullTerminator
-                    raise AhkUnsupportedValueError(r"string contains null terminator '\x00' which AutoHotkey ignores characters beyond")
-                if Script.SEPARATOR in val:  # :Separator
-                    raise AhkUnsupportedValueError(f'string contains {repr(Script.SEPARATOR)} which is reserved for messages to AutoHotkey')
-            val_str = str(val)
-        return f"{type(val).__name__[:5]:<5} {val_str}"  # padded len(5) :TypePrefix
+        elif isinstance(val, int) and not isinstance(val, bool):
+            if val > _INT64_MAX or val < _INT64_MIN:
+                raise AhkUnsupportedValueError(f"integer {val} exceeds AutoHotkey's signed 64-bit limits ({_INT64_MIN} to {_INT64_MAX})")
+        elif isinstance(val, bool):
+            return f"b{int(val)}"
+        elif isinstance(val, str):
+            if '\x00' in val:  # :NullTerminator
+                raise AhkUnsupportedValueError(r"string contains null terminator '\x00' which AutoHotkey ignores characters beyond")
+            if Script.SEPARATOR in val:  # :Separator
+                raise AhkUnsupportedValueError(f"string contains {repr(Script.SEPARATOR)} which is reserved for messages to AutoHotkey")
+        return f"{type(val).__name__[:1]}{val}"  # :TypePrefix
 
-    def _f(self, msg: int, name: str, *args: Primitive, need_result: bool, coerce_result: bool = False) -> Primitive:
+    def _f(self, msg: int, name: str, *args: Primitive, need_result: bool) -> Primitive:
         self._send(msg, [name, need_result] + list(args))
-        response = self._read_response()
-        return self._from_ahk_str(response) if coerce_result else response
+        return self._from_ahk_str()
 
     def call(self, name: str, *args: Primitive) -> None:
         """Call a script function without receiving the result, if any. Lowest latency."""
@@ -524,49 +519,33 @@ class Script:
         Higher latency, but solution to `AhkCantCallOutInInputSyncCallError`."""
         self._f(Script._Msg.F_MAIN, name, *args, need_result=False)
 
-    def f_raw(self, name: str, *args: Primitive) -> str:
-        """Call a script function and return the result as its raw string (don't mimic AutoHotkey's type inference)."""
-        return self._f(Script._Msg.F, name, *args, need_result=True)
-
-    def f_raw_main(self, name: str, *args: Primitive) -> str:
-        """Same as `f_raw()` but executed on AutoHotkey's main thread.
-        Higher latency, but solution to `AhkCantCallOutInInputSyncCallError`."""
-        return self._f(Script._Msg.F_MAIN, name, *args, need_result=True)
-
     def f(self, name: str, *args: Primitive) -> Primitive:
         """Call a script function and return the result."""
-        return self._f(Script._Msg.F, name, *args, need_result=True, coerce_result=True)
+        return self._f(Script._Msg.F, name, *args, need_result=True)
 
     def f_main(self, name: str, *args: Primitive) -> Primitive:
         """Same as `f()` but executed on AutoHotkey's main thread.
         Higher latency, but solution to `AhkCantCallOutInInputSyncCallError`."""
-        return self._f(Script._Msg.F_MAIN, name, *args, need_result=True, coerce_result=True)
+        return self._f(Script._Msg.F_MAIN, name, *args, need_result=True)
 
-    @staticmethod
-    def _is_num(str_: str) -> bool:
-        return str_.isdigit() or (str_.startswith('-') and str_[1:].isdigit())
-
-    @staticmethod
-    def _from_ahk_str(str_: str) -> Primitive:
-        is_hex = str_.startswith('0x') and all(c in string.hexdigits for c in str_[2:])
-        if is_hex:
-            return int(str_, 16)
-
-        if Script._is_num(str_):
-            return int(str_.lstrip('0') or '0', 0)
-        if Script._is_num(str_.replace('.', '', 1)):
-            return float(str_)
+    def _from_ahk_str(self) -> Primitive:
+        str_ = self._read_response()
+        if str_:
+            match str_[0]:
+                case 'F':
+                    return float(str_[1:])
+                case 'I':
+                    return int(str_[1:])
+                case 'B':
+                    return str_[1:] == 1
+                case 'S':
+                    return str_[1:]
         return str_
-
-    def get_raw(self, name: str) -> str:
-        """Get a global script variable or built-in as its raw string (don't mimic AutoHotkey's type inference)."""
-        self._send(Script._Msg.GET, [name])
-        return self._read_response()
 
     def get(self, name: str) -> Primitive:
         """Get a global script variable or built-in like `A_TimeIdle`."""
         self._send(Script._Msg.GET, [name])
-        return Script._from_ahk_str(self._read_response())
+        return self._from_ahk_str()
 
     def set(self, name: str, val: Primitive) -> None:
         """Set a global script variable, or some built-ins like `A_Clipboard`."""

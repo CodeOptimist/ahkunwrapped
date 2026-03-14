@@ -7,7 +7,6 @@ from .autohotkey import (
     AhkUnsupportedValueError as AhkUnsupportedValueError,
     AhkCantCallOutInInputSyncCallError as AhkCantCallOutInInputSyncCallError,
     AhkWarning as AhkWarning,
-    AhkLossOfPrecisionWarning as AhkLossOfPrecisionWarning,
     AhkUserException as AhkUserException,
     AhkCaughtNonExceptionWarning as AhkCaughtNonExceptionWarning,
     Script as Script,

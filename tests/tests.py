@@ -51,6 +51,10 @@ def test_utf16_ieee754():
     assert ahk.f('IsUtf16Ieee754')
 
 
+def test_int64_limit():
+    assert ahk.f('HasInt64Limit')
+
+
 @given(st.sampled_from([ahk.f, ahk.f_main]))
 def test_smile(f):
     assert f('GetSmile') == '🙂'
@@ -125,16 +129,6 @@ def test_warning_lineno():
         ahk._popen.stderr.readline()
 
 
-# warning covered in `test_float()`
-# if failed, adjust its `stacklevel=`
-def test_precisionwarning_lineno():
-    with warnings.catch_warnings(record=True) as w:
-        echo(1 / 3)  # AhkLossOfPrecisionWarning
-        frame = currentframe()
-        assert frame is not None and w is not None
-        assert w[0].filename == getframeinfo(frame).filename and w[0].lineno == frame.f_lineno - 3  # the call is 3 lines above us
-
-
 echo = partial(ahk.f, 'Echo')
 echo_main = partial(ahk.f_main, 'Echo')
 
@@ -152,9 +146,17 @@ def test_bool(f, bool_):
     assert f(bool_) == bool_
 
 
+_INT64_MIN = -(2 ** 63)
+_INT64_MAX = (2 ** 63) - 1
+
+
 @given(result_funcs, st.integers())
 def test_int(f, int_):
-    assert f(int_) == int_
+    if _INT64_MIN <= int_ <= _INT64_MAX:
+        assert f(int_) == int_
+    else:
+        with pytest.raises(autohotkey.AhkUnsupportedValueError):
+            f(int_)
 
 
 @given(result_funcs, st.from_type(float))
@@ -163,28 +165,14 @@ def test_float(f, float_):
         with pytest.raises(autohotkey.AhkUnsupportedValueError):
             f(float_)
     else:
-        ahk_float = float(f'{float_:.6f}')
-        if ahk_float != float_:
-            with pytest.warns(autohotkey.AhkLossOfPrecisionWarning):
-                assert f(float_) == ahk_float
-        else:
-            assert f(float_) == float_
+        result = f(float_)
+        assert result == float_
 
 
-echo_raw = partial(ahk.f_raw, 'Echo')
-echo_raw_main = partial(ahk.f_raw_main, 'Echo')
-
-
-def set_get_raw(val):
-    ahk.set('myVar', val)
-    return ahk.get_raw('myVar')
-
-
-raw_result_funcs = st.sampled_from([echo_raw, echo_raw_main, set_get_raw])
 newlines = [''.join(x) for x in itertools.product('a\n\r', repeat=3)]
 
 
-@given(raw_result_funcs, st.one_of(st.from_type(str), st.sampled_from(newlines)))
+@given(result_funcs, st.one_of(st.from_type(str), st.sampled_from(newlines)))
 def test_str(f, str_):
     if '\0' in str_ or Script.SEPARATOR in str_:
         with pytest.raises(autohotkey.AhkUnsupportedValueError):
@@ -194,7 +182,7 @@ def test_str(f, str_):
 
 
 @pytest.mark.filterwarnings('error')
-@given(raw_result_funcs, st.text())
+@given(result_funcs, st.text())
 def test_text(f, text):
     try:
         assert f(text) == text
@@ -203,7 +191,7 @@ def test_text(f, text):
 
 
 @pytest.mark.filterwarnings('error')
-@given(raw_result_funcs, st.text())
+@given(result_funcs, st.text())
 def test_long_text(f, text):
     try:
         assert f(text) == text

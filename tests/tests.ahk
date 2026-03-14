@@ -24,6 +24,10 @@ IsUtf16Ieee754() {
     return True
 }
 
+HasInt64Limit() {
+    return (9223372036854775807 + 1 == -9223372036854775808)
+}
+
 GetSmile() {
     return "🙂"
 }
