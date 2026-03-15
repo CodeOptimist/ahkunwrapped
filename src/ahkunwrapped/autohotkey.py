@@ -99,7 +99,8 @@ class Script:
     # we read one line at a time, but need a unique reserved character
     #  to signify the end of message, and not just a newline within it
     _EOM: Final = SEPARATOR.encode('utf-16-le') + b'\n'  # :Eom :OneByteNewline
-    _EOM_SIZE: Final = 1 + len(_EOM)  # include :IsFinal bool
+    _EOM_SIZE: Final = 1 + len(_EOM)  # include :IsFinal bool, before EOM
+    _IS_FINAL__POS: Final = 0 - _EOM_SIZE
     _TEXT_SIZE: Final[int] = _BUFFER_SIZE - _EOM_SIZE
 
     _python_pid: Final = os.getpid()
@@ -111,7 +112,13 @@ class Script:
     Persistent()
     A_WorkingDir := "''' + os.getcwd() + '''"
     _PY_SEPARATOR := Chr(''' + str(ord(SEPARATOR)) + ''')
-    _PY_EOM_BYTES := Chr(1) "`n"  ; internally as 01 00 10 00  :Utf16Internals
+
+    _PY_NONFINAL_EOM := Buffer(''' + str(_EOM_SIZE) + ''')
+    _PY_FINAL_EOM    := Buffer(''' + str(_EOM_SIZE) + ''')
+    ; :IsFinal :Eom :OneByteNewline
+    NumPut("UChar", 00, "UShort", Ord(_PY_SEPARATOR), "UChar", Ord("`n"), _PY_NONFINAL_EOM)
+    NumPut("UChar", 01, "UShort", Ord(_PY_SEPARATOR), "UChar", Ord("`n"), _PY_FINAL_EOM)
+
     ; Let's write strings as they're stored, avoiding `StrPut()`.
     ; https://www.autohotkey.com/docs/v2/Concepts.htm#string-encoding
     _pyStdOut := FileOpen("*", "w", "utf-16-raw")
@@ -124,9 +131,7 @@ class Script:
         ;MsgBox("offset: " offset " textSize: " textSize " isFinal: " isFinal)
 
         pipe.RawWrite(StrPtr(text) + offset, isFinal ? textSize : ''' + str(_TEXT_SIZE) + ''')
-        pipe.RawWrite(StrPtr(_PY_EOM_BYTES) + (isFinal ? + 0 : + 1), 1)  ; :Utf16Internals :IsFinal
-        pipe.Write(_PY_SEPARATOR)  ; :Eom
-        pipe.RawWrite(StrPtr(_PY_EOM_BYTES) + 2, 1)  ; :OneByteNewline
+        pipe.RawWrite(isFinal ? _PY_FINAL_EOM : _PY_NONFINAL_EOM, ''' + str(_EOM_SIZE) + ''')
 
         pipe.Read(0)
     }
@@ -461,9 +466,7 @@ A_WorkingDir := "{self._file_path.parent}"
             err += err_buffer[:-Script._EOM_SIZE]  # : Eom
             out += out_buffer[:-Script._EOM_SIZE]
 
-            bool_pos = -Script._EOM_SIZE
-            is_final = out_buffer[bool_pos] and err_buffer[bool_pos]  # :IsFinal
-            if is_final:
+            if out_buffer[Script._IS_FINAL__POS] and err_buffer[Script._IS_FINAL__POS]:  # :IsFinal
                 break
             self._send_message(Script._Msg.MORE)
         if self._lock is not None:
