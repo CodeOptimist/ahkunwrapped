@@ -108,7 +108,6 @@ class Script:
     _CORE: Final[str] = '''
     if (ProcessExist(''' + str(_python_pid) + ''') = 0) ; not found
         ExitApp() ; https://stackoverflow.com/q/73506891/#comment129808240_73506891 :AvoidJobRace
-    #NoTrayIcon
     Persistent()
     A_WorkingDir := "''' + os.getcwd() + '''"
     _PY_SEPARATOR := Chr(''' + str(ord(SEPARATOR)) + ''')
@@ -284,9 +283,10 @@ class Script:
     ; an unused label so #Warn won't complain that the script's auto-execute section is unreachable
     ; it is intentionally unreachable (we use `AutoExec()` instead) so scripts can run exclusive standalone code
     _Py_SuppressUnreachableWarning:
-    '''
+'''
 
-    def __init__(self, script: str = "", ahk_path: Path = None, execute_from: Path = None, halt_process_tree_on_exit: bool = False) -> None:
+    def __init__(self, script: str = "", ahk_path: Path = None, execute_from: Path = None, halt_process_tree_on_exit: bool = False, *,
+                 _file_path: Path = None) -> None:
         """Launch an AutoHotkey process.
 
         :param script: AutoHotkey script providing user functions and globals. Optional if you only need built-in functions and `A_` variables.
@@ -297,9 +297,10 @@ class Script:
             *Caution*: Universal Windows Platform (UWP) apps (e.g., Windows 10+'s notepad.exe and calc.exe) discard our job object;
             suggest using AutoHotkey's `OnExit()` in those cases.
         """
-        self._file = None
+
         self._script = script
         self._halt_process_tree_on_exit = halt_process_tree_on_exit
+        self._file_path = _file_path
 
         if ahk_path is None:
             ahk_path = _PACKAGE_PATH / r'lib\AutoHotkey\AutoHotkey64.exe'
@@ -379,7 +380,23 @@ class Script:
             win32job.AssignProcessToJobObject(Script._python_job_obj, ahk_handle)  # this one needs to be first to avoid 'Access denied', also see :AvoidJobRace
             win32job.AssignProcessToJobObject(self._tree_job_obj, ahk_handle)  # no race here, AutoHotkey won't `Run` a child process before "Initialized"
 
-        self._ahk_stdin.write(Script._CORE)
+        if self._file_path is None:
+            preamble = f"""
+#NoTrayIcon
+"""
+        else:
+            preamble = f"""
+A_IconTip := "{self._file_path.name}"
+A_ScriptName := "{self._file_path.name}"
+A_WorkingDir := "{self._file_path.parent}"
+#Include "{self._file_path.parent}"
+"""
+
+        assert Script._CORE[-1] == '\n'
+        injected = f"{preamble}{Script._CORE}"
+        self._line_offset = injected.count('\n')
+
+        self._ahk_stdin.write(injected)
         self._ahk_stdin.write(self._script)
         self._ahk_stdin.close()
 
@@ -396,6 +413,15 @@ class Script:
                   halt_process_tree_on_exit: bool = False) -> 'Script':  # :FromFile
         """Launch an AutoHotkey process from a script file.
 
+        Limitations:
+        `A_ScriptFullPath` will permanently return `*`.
+        `A_ScriptDir` will be the Python host's initial working directory.
+        `A_LineFile` will return `*` (except within an `#Include`d file).
+
+        As expected:
+        `A_WorkingDir` and `#Include` will be set to the file's parent folder.
+        `A_ScriptName` and `A_IconTip` will be set to the file's name.
+
         :param path: Path to file.
         :param format_dict: `.format()` dict to use {{variable}} within script. `globals()` is a common choice.
         :param ahk_path: See `Script()`.
@@ -409,8 +435,7 @@ class Script:
             # we instead support double braces, so make them single for `format()`
             script = script.replace(r'{{{', r'').replace(r'}}}', r'')  # {{bar}} -> {{{{bar}}}} -> {bar}
             script = script.format(**format_dict)
-        script = Script(script, ahk_path, execute_from, halt_process_tree_on_exit)
-        script._file = path  # for exceptions
+        script = Script(script, ahk_path, execute_from, halt_process_tree_on_exit, _file_path=path)
         return script
 
     def _read_pipes(self) -> tuple[str, str]:
@@ -450,8 +475,8 @@ class Script:
                 exception = exception_class(*args.split(Script.SEPARATOR))
                 if isinstance(exception, AhkUserException):
                     if exception.from_error_obj:
-                        exception.file = self._file or exception.file
-                        exception.line = exception.line - Script._CORE.count('\n')
+                        exception.file = self._file_path or exception.file
+                        exception.line -= self._line_offset
 
                         if exception.message == "2147549453":
                             exception.message = "(0x8001010D) An outgoing call cannot be made since the application is dispatching an input-synchronous call."

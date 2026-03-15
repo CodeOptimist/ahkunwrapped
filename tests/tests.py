@@ -87,7 +87,7 @@ def test_userexception():
         assert e.message == "UserException"
         assert e.what == "example what"
         assert e.extra == "example extra"
-        assert e.file == ahk._file
+        assert e.file == ahk._file_path
 
 
 def test_userexception_lineno():
