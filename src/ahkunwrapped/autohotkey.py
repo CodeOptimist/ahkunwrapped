@@ -118,7 +118,7 @@ class Script:
     _pyStdErr := FileOpen("**", "w", "utf-16-raw")
 
     _Py_Response(pipe, text, offset, onMain) {
-        global _PY_SEPARATOR, _PY_EOM_BYTES
+        static textSize, isFinal
         textSize := Max(StrLen(text) * 2 - offset, 0)
         isFinal := onMain or textSize <= ''' + str(_TEXT_SIZE) + '''
         ;MsgBox("offset: " offset " textSize: " textSize " isFinal: " isFinal)
@@ -132,10 +132,11 @@ class Script:
     }
 
     _Py_MsgMore(wParam, lParam, msg, hwnd) {
-        global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset
-        ''' + _comment_debug() + '''DebugMsg(wParam, msg)
+        ''' + _comment_debug() + '''_Py_DebugMsg(wParam, msg)
 
+        static numRead
         numRead := ''' + str(_TEXT_SIZE) + '''
+        global _pyOutOffset, _pyErrOffset
         _Py_Response(_pyStdOut, _pyOutText, _pyOutOffset += numRead, False)
         _Py_Response(_pyStdErr, _pyErrText, _pyErrOffset += numRead, False)
         return 1  ; :MsgReturn
@@ -143,43 +144,44 @@ class Script:
 
     ; we can't peek() stdout/stderr, so always write to both or we will over-read and hang waiting
     _Py_StdOut(outText, onMain := False) {
-        global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset
+        global _pyOutText, _pyOutOffset, _pyErrText, _pyErrOffset
         _Py_Response(_pyStdOut, _pyOutText := outText, _pyOutOffset := 0, onMain)
         _Py_Response(_pyStdErr, _pyErrText := "", _pyErrOffset := 0, onMain)
     }
 
     _Py_StdErr(name, errText, onMain := False) {
-        global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset, _PY_SEPARATOR
+        global _pyOutText, _pyOutOffset, _pyErrText, _pyErrOffset
         _Py_Response(_pyStdOut, _pyOutText := "", _pyOutOffset := 0, onMain)
         _Py_Response(_pyStdErr, _pyErrText := name _PY_SEPARATOR errText, _pyErrOffset := 0, onMain)
     }
 
     _Py_MsgCopyData(wParam, lParam, msg, hwnd) {
-        global _pyThreadMsgData, _PY_SEPARATOR
-        ''' + _comment_debug() + '''DebugMsg(wParam, msg)
+        ''' + _comment_debug() + '''_Py_DebugMsg(wParam, msg)
 
-        ;dataTypeId := NumGet(lParam, 0*A_PtrSize, "Int64") ; unneeded atm
-        dataSize := NumGet(lParam, 1*A_PtrSize, "UInt")
-        strAddr := NumGet(lParam, 2*A_PtrSize, "Ptr")
-        data := StrGet(strAddr, dataSize, "utf-8")
-        ;OutputDebug("Received: '" data "'")
+        static size, addr, copyData
+        ;extra := NumGet(lParam, 0*A_PtrSize, "Int64") ; unneeded atm
+        size := NumGet(lParam, 1*A_PtrSize, "UInt")
+        addr := NumGet(lParam, 2*A_PtrSize, "Ptr")
+        copyData := StrGet(addr, size, "utf-8")
+        ;OutputDebug("Received: '" copyData "'")
 
         ; Since messages can arrive from multiple threads (e.g. clicking 'Reload' within OBS Studio 'Scripts' window,
         ;  while a timer is also running within said script) we need to keep their input data separate.
         _pyThreadMsgData[wParam] := []
         ; limitation of Parse and StrSplit(): separator must be a single character :Separator
-        Loop Parse, data, _PY_SEPARATOR
+        Loop Parse, copyData, _PY_SEPARATOR
         {
-            ; see Python function `_to_ahk_str()`
-            _type := SubStr(A_LoopField, 1, 1)  ; :TypePrefix
+            static type, val
+            type := SubStr(A_LoopField, 1, 1)  ; :TypePrefix
             val := SubStr(A_LoopField, 2)
 
-            if (_type = "f")
+            if (type = "f")
                 val := Float(val)
-            else if (_type = "i")
+            else if (type = "i")
                 val := Integer(val)
-            else if (_type = "b")
+            else if (type = "b")
                 val := (val == "1")
+
             _pyThreadMsgData[wParam].Push(val)
         }
         return 1  ; :MsgReturn
@@ -188,8 +190,7 @@ class Script:
     ; Run on main thread, higher latency but may be necessary for `DllCall()` to avoid:
     ;   '(0x8001010D) An outgoing call cannot be made since the application is dispatching an input-synchronous call.'
     _Py_MsgFMain(wParam, lParam, msg, hwnd) {
-        global _pyMsgFMainData
-        ''' + _comment_debug() + '''DebugMsg(wParam, msg)
+        ''' + _comment_debug() + '''_Py_DebugMsg(wParam, msg)
 
         ''' + _comment_debug() + '''OutputDebug("SENDING TO MAIN THREAD")
         ; Ordinarily a new message can interrupt this, but none will be sent because of our lock.
@@ -203,21 +204,23 @@ class Script:
     }
 
     _Py_MsgF(wParam, lParam, msg, hwnd, onMain := False) {
-        global _pyThreadMsgData, _PY_SEPARATOR
         ''' + _comment_debug() + '''if (not onMain)
-        ''' + _comment_debug() + '''    DebugMsg(wParam, msg)
+        ''' + _comment_debug() + '''    _Py_DebugMsg(wParam, msg)
 
-        _func := _pyThreadMsgData[wParam].RemoveAt(1)
-        funcRef := unset
-        try funcRef := %_func%
-        if not (IsSet(funcRef) and HasMethod(funcRef)) {
+        static funcName, func
+        funcName := _pyThreadMsgData[wParam].RemoveAt(1)
+        func := unset
+        try func := %funcName%
+
+        if not (IsSet(func) and HasMethod(func)) {
             _pyThreadMsgData.Delete(wParam)
-            _Py_StdErr("''' + AhkFuncNotFoundError.__name__ + '''", _func, onMain)
+            _Py_StdErr("''' + AhkFuncNotFoundError.__name__ + '''", funcName, onMain)
             return 1  ; :MsgReturn
         }
         needResult := _pyThreadMsgData[wParam].RemoveAt(1)
 
-        try result := %_func%(_pyThreadMsgData[wParam]*)
+        static ex
+        try result := func(_pyThreadMsgData[wParam]*)
         catch Any as ex {
             _pyThreadMsgData.Delete(wParam)
             if (ex is Error)
@@ -234,8 +237,9 @@ class Script:
     }
 
     _Py_MsgGet(wParam, lParam, msg, hwnd) {
-        local name, val
-        ''' + _comment_debug() + '''DebugMsg(wParam, msg)
+        ''' + _comment_debug() + '''_Py_DebugMsg(wParam, msg)
+
+        static name, val
         name := _pyThreadMsgData[wParam].RemoveAt(1)
         val := %name%
         _pyThreadMsgData.Delete(wParam)
@@ -245,8 +249,9 @@ class Script:
 
     _Py_MsgSet(wParam, lParam, msg, hwnd) {
         global
-        local name
-        ''' + _comment_debug() + '''DebugMsg(wParam, msg)
+        ''' + _comment_debug() + '''_Py_DebugMsg(wParam, msg)
+
+        static name
         name := _pyThreadMsgData[wParam].RemoveAt(1)
         %name% := _pyThreadMsgData[wParam].RemoveAt(1)
         _pyThreadMsgData.Delete(wParam)
@@ -258,7 +263,7 @@ class Script:
         return 1  ; required even after `ExitApp()` :MsgReturn
     }
 
-    DebugMsg(wParam, msg) {
+    _Py_DebugMsg(wParam, msg) {
         OutputDebug(Format("msg {:#06x}\t\tPython thread {:#05} -> AHK thread {:#05}\t\tPython process {:#05} -> AHK {:#05}"
             , msg, wParam, DllCall("GetCurrentThreadId"), ''' + str(_python_pid) + ''', DllCall("GetCurrentProcessId")))
     }
@@ -280,7 +285,7 @@ class Script:
     _Py_StdOut("Initialized")
     return
 
-    ; an unused label so #Warn won't complain that the script's auto-execute section is unreachable
+    ; an unused label so `#Warn` won't complain that the script's auto-execute section is unreachable
     ; it is intentionally unreachable (we use `AutoExec()` instead) so scripts can run exclusive standalone code
     _Py_SuppressUnreachableWarning:
 '''
