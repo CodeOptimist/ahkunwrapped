@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2019-2026 Christopher S. Galpin
 
-import array
 import atexit
+import ctypes
 import io
 import math
 import os
 import shutil
-import struct
 import subprocess
 import sys
 import threading
@@ -15,6 +14,7 @@ import time
 # import traceback
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
+from ctypes import wintypes
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
@@ -503,23 +503,29 @@ A_WorkingDir := "{self._file_path.parent}"
         return out
 
     # https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendmessage
-    def _send_message(self, msg: int, lparam: bytes = None) -> None:
-        # this is essential because messages are ignored if we're uninterruptible (e.g., in a menu)
-        # wparam is normally source window handle, but in our case source thread id
+    def _send_message(self, msg: int, lparam: int = None) -> None:
+        # This is essential because messages are ignored if we're uninterruptible (e.g., in a menu).
+        # wparam is normally the source window handle, but in our case source thread id.
+        #  (We can't put it in the first member of COPYDATASTRUCT because ALL messages need it.)
         # noinspection PyTypeChecker
         while not win32api.SendMessage(self._hwnd, msg, threading.get_ident(), lparam):
             self.poll()
             time.sleep(0.01)
 
     def _send(self, msg: int, data: Sequence[Primitive]) -> None:
+        # OutputDebugString(f"Sending: {data}")
+        # https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-copydatastruct
+        class COPYDATASTRUCT(ctypes.Structure):
+            _fields_ = [
+                ('dwData', wintypes.WPARAM),
+                ('cbData', wintypes.DWORD),
+                ('lpData', ctypes.c_char_p),
+            ]
+
         data_str = Script.SEPARATOR.join(Script._to_ahk_str(v) for v in data)
-        # OutputDebugString(f"Sent: {data}")
-        # https://learn.microsoft.com/en-us/windows/win32/dataxchg/wm-copydata
-        char_buffer = array.array('b', bytes(data_str, 'utf-8'))
-        addr, size = char_buffer.buffer_info()
-        data_type_id = msg  # anything; unneeded atm
-        struct_ = struct.pack('PLP', data_type_id, size, addr)
-        self._send_message(win32con.WM_COPYDATA, struct_)
+        data_bytes = data_str.encode('utf-8')
+        cds = COPYDATASTRUCT(0, len(data_bytes), ctypes.c_char_p(data_bytes))
+        self._send_message(win32con.WM_COPYDATA, ctypes.addressof(cds))
         assert self._lock is not None
         self._lock.acquire(blocking=True)  # set `False` to witness threads test failure :TestThreads
         self._send_message(msg)
