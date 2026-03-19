@@ -312,6 +312,9 @@ class Script:
         self._halt_process_tree_on_exit = halt_process_tree_on_exit
         self._file_path = _file_path
 
+        self._err, self._out = bytearray(), bytearray()
+        self._err_buffer, self._out_buffer = bytearray(), bytearray()
+
         if ahk_path is None:
             ahk_path = _PACKAGE_PATH / r'lib\AutoHotkey\AutoHotkey64.exe'
             if _IN_PYINSTALLER and not ahk_path.is_file():
@@ -433,7 +436,7 @@ A_WorkingDir := "{self._file_path.parent}"
         `A_ScriptName` and `A_IconTip` will be set to the file's name.
 
         :param path: Path to file.
-        :param format_dict: `.format()` dict to use {{variable}} within script. `globals()` is a common choice.
+        :param format_dict: `.format()` dict to use '{{variable}}' within the script. `globals()` is a common choice.
         :param ahk_path: See `Script()`.
         :param execute_from: See `Script()`.
         :param halt_process_tree_on_exit: See `Script()`.
@@ -449,29 +452,33 @@ A_WorkingDir := "{self._file_path.parent}"
         return script
 
     def _read_pipes(self) -> tuple[str, str]:
-        err, out = bytearray(), bytearray()
+        def end_of_message(bytearray_: bytearray) -> bool:
+            self.poll()
+            return bytearray_.endswith(Script._EOM)  # :Eom
+
+        self._err.clear()
+        self._out.clear()
+
         while True:
-            def end_of_message(bytearray_: bytearray) -> bool:
-                self.poll()
-                return bytearray_.endswith(Script._EOM)  # :Eom
-
             # we're careful not to over-read into the next response,
-            # but we can at least go line by line since we always end with \n
-            err_buffer, out_buffer = bytearray(), bytearray()
-            while not end_of_message(out_buffer):
-                out_buffer += self._ahk_stdout.readline()  # :OneByteNewline
-            while not end_of_message(err_buffer):
-                err_buffer += self._ahk_stderr.readline()
+            # but we can at least go line by line since we always end with `\n`
+            self._err_buffer.clear()
+            self._out_buffer.clear()
 
-            err += err_buffer[:-Script._EOM_SIZE]  # : Eom
-            out += out_buffer[:-Script._EOM_SIZE]
+            while not end_of_message(self._out_buffer):
+                self._out_buffer += self._ahk_stdout.readline()  # :OneByteNewline
+            while not end_of_message(self._err_buffer):
+                self._err_buffer += self._ahk_stderr.readline()
 
-            if out_buffer[Script._IS_FINAL__POS] and err_buffer[Script._IS_FINAL__POS]:  # :IsFinal
+            self._err += self._err_buffer[:-Script._EOM_SIZE]  # : Eom
+            self._out += self._out_buffer[:-Script._EOM_SIZE]
+
+            if self._out_buffer[Script._IS_FINAL__POS] and self._err_buffer[Script._IS_FINAL__POS]:  # :IsFinal
                 break
             self._send_message(Script._Msg.MORE)
         if self._lock is not None:
             self._lock.release()
-        return err.decode('utf-16-le'), out.decode('utf-16-le')
+        return self._err.decode('utf-16-le'), self._out.decode('utf-16-le')
 
     def _read_response(self) -> str:
         err, out = self._read_pipes()
