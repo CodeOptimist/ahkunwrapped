@@ -10,6 +10,8 @@ Startup() {
     global myVar := ""
 }
 
+#Include "included.ahk"
+
 IsUtf16Ieee754() {
     str := "0.33333333333333331"
     floatStr := String(1 / 3)

@@ -87,7 +87,8 @@ def test_userexception():
         assert e.message == "UserException"
         assert e.what == "example what"
         assert e.extra == "example extra"
-        assert e.file == ahk._file_path
+        assert ahk._file_path is not None
+        assert e.file == str(ahk._file_path.resolve())
 
 
 def test_userexception_lineno():
@@ -96,6 +97,21 @@ def test_userexception_lineno():
         assert False
     except autohotkey.AhkUserException as e:
         line_num = 1 + next(num for (num, line) in enumerate(ahk._script.split('\n')) if line.startswith('    throw Error("UserException"'))
+        assert e.line == line_num
+
+
+def test_included_userexception():
+    try:
+        ahk.call('IncludedUserException')
+        assert False
+    except autohotkey.AhkUserException as e:
+        assert e.message == "UserException"
+        assert e.what == "example what"
+        assert e.extra == "example extra"
+        path = Path(__file__).parent / 'included.ahk'
+        assert e.file == str(path.resolve())
+        text = path.read_text(encoding='utf-8')
+        line_num = 1 + next(num for (num, line) in enumerate(text.split('\n')) if line.startswith('    throw Error("UserException"'))
         assert e.line == line_num
 
 

@@ -490,8 +490,10 @@ A_WorkingDir := "{self._file_path.parent}"
                 exception = exception_class(*args.split(Script.SEPARATOR))
                 if isinstance(exception, AhkUserException):
                     if exception.from_error_obj:
-                        exception.file = self._file_path or exception.file
-                        exception.line -= self._line_offset
+                        if exception.file == '*':
+                            if self._file_path is not None:
+                                exception.file = str(self._file_path.resolve())
+                            exception.line -= self._line_offset
 
                         if exception.message == "2147549453":
                             exception.message = "(0x8001010D) An outgoing call cannot be made since the application is dispatching an input-synchronous call."
