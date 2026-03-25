@@ -35,6 +35,7 @@ Homepage = "https://github.com/CodeOptimist/ahkunwrapped"
 [dependency-groups]
 dev = [
     "build~=1.0",
+    "cogapp~=3.0",
     "hypothesis~=6.0",
     "psutil~=7.0",
     "pyinstaller~=6.0",
