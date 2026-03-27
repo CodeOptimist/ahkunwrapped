@@ -250,12 +250,14 @@ class Script:
 
         static data, name
         data := _pyThreadMsgData[wParam]
-        name := data.RemoveAt(1)
+        name := data[1]
 
         static ex
         try {
             static val
             val := %name%
+            loop data.Length - 1
+                val := val.%data[A_Index + 1]%
             _Py_StdOut(SubStr(Type(val), 1, 1) . String(val), False)  ; :CatchToString
         } catch Any as ex {
             _Py_UserException(ex, False)
@@ -271,11 +273,29 @@ class Script:
         global
         ''' + _comment_debug() + '''_Py_DebugMsg(wParam, msg)
 
-        static data, name
+        static data, name, val
         data := _pyThreadMsgData[wParam]
-        name := data.RemoveAt(1)
-        %name% := data.RemoveAt(1)
-        _pyThreadMsgData.Delete(wParam)
+        name := data[1]
+        val := data.Pop()
+
+        static ex
+        try {
+            if data.Length == 1 {
+                %name% := val
+            } else {
+                static obj
+                obj := %name%
+                loop data.Length - 2
+                    obj := obj.%data[A_Index + 1]%
+                obj.%data[-1]% := val
+            }
+        } catch Any as ex {
+            _Py_UserException(ex, False)
+            return 1  ; :MsgReturn
+        } finally {
+            _pyThreadMsgData.Delete(wParam)
+        }
+
         return 1  ; :MsgReturn
     }
 
@@ -674,15 +694,15 @@ A_WorkingDir := "{self._file_path.parent}"
         return str_
 
     def get(self, name: str) -> Primitive:
-        """Get a global script variable or built-in like `A_TimeIdle`."""
-        self._send(Script._Msg.GET, [name])
+        """Get a global script variable, property, or built-in like `A_TimeIdle`."""
+        self._send(Script._Msg.GET, name.split('.'))
         return self._from_ahk_str()
 
     def set(self, name: str, val: Primitive) -> None:
-        """Set a global script variable, or some built-ins like `A_Clipboard`."""
+        """Set a global script variable, property, or some built-ins like `A_Clipboard`."""
         # Every `_send()` will lock, so others are finished before we `set()`.
         #  We don't need a confirmation response, just the ensurance that it finishes before others begin.
-        self._send(Script._Msg.SET, [name, val])
+        self._send(Script._Msg.SET, [*name.split('.'), val])
         assert self._lock is not None
         self._lock.release()  # normally done within `_read_response()`
 

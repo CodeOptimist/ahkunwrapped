@@ -237,6 +237,18 @@ def test_long_text(f, text):
     assert f(long_text) == long_text
 
 
+def test_props():
+    with pytest.raises(autohotkey.AhkUserException):  # no `ToString`
+        ahk.get('myObj.myProp')
+    assert ahk.get('myObj.myProp.str1') == "Hello"
+    assert ahk.get('myObj.myProp.str2') == " World"
+    assert ahk.get('myObj.myProp.str3') == "!"
+    ahk.set('myObj.myProp.str2', " Friend")
+    assert ahk.get('myObj.myProp.str1') == "Hello"
+    assert ahk.get('myObj.myProp.str2') == " Friend"
+    assert ahk.get('myObj.myProp.str3') == "!"
+
+
 def test_halt_descendants():
     charmap = """
         Startup() {

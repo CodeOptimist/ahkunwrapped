@@ -8,6 +8,14 @@ return
 
 Startup() {
     global myVar := ""
+
+    global myObj := {
+        myProp: {
+            str1: "Hello",
+            str2: " World",
+            str3: "!",
+        }
+    }
 }
 
 #Include "included.ahk"
