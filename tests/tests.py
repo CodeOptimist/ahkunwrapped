@@ -127,14 +127,18 @@ def test_nonexception_warning_lineno():
         with warnings.catch_warnings(record=True) as w:
             with pytest.raises(autohotkey.AhkUserException):
                 ahk.call(f'NonException{i}')
-            assert w[0].filename == getframeinfo(currentframe()).filename and w[0].lineno == currentframe().f_lineno - 1
+            frame = currentframe()
+            assert frame is not None and w is not None
+            assert w[0].filename == getframeinfo(frame).filename and w[0].lineno == frame.f_lineno - 3  # the call is 3 lines above us
 
 
 # if failed, adjust its `stacklevel=`
 def test_warning_lineno():
     with warnings.catch_warnings(record=True) as w:
         ahk.call('_Py_StdErr', autohotkey.AhkWarning.__name__, "some generic warning")  # get directly because unused atm
-        assert w[0].filename == getframeinfo(currentframe()).filename and w[0].lineno == currentframe().f_lineno - 1
+        frame = currentframe()
+        assert frame is not None and w is not None
+        assert w[0].filename == getframeinfo(frame).filename and w[0].lineno == frame.f_lineno - 3  # the call is 3 lines above us
         # eat the redundant output from call() finishing
         ahk._popen.stdout.readline()
         ahk._popen.stderr.readline()
@@ -145,7 +149,9 @@ def test_warning_lineno():
 def test_precisionwarning_lineno():
     with warnings.catch_warnings(record=True) as w:
         echo(1 / 3)  # AhkLossOfPrecisionWarning
-        assert w[0].filename == getframeinfo(currentframe()).filename and w[0].lineno == currentframe().f_lineno - 1
+        frame = currentframe()
+        assert frame is not None and w is not None
+        assert w[0].filename == getframeinfo(frame).filename and w[0].lineno == frame.f_lineno - 3  # the call is 3 lines above us
 
 
 echo = partial(ahk.f, 'Echo')
