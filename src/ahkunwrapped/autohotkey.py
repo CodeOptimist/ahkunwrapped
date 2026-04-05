@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
 from subprocess import TimeoutExpired
-from typing import ClassVar, Final, IO
+from typing import Any, ClassVar, Final, IO, overload
 from warnings import warn
 
 import win32api
@@ -669,10 +669,10 @@ A_WorkingDir := "{self._file_path.parent}"
                 raise AhkUnsupportedValueError(f"string contains {repr(Script.SEPARATOR)} which is reserved for messages to AutoHotkey")
         return f"{type(val).__name__[:1]}{val}"  # :TypePrefix
 
-    def _f(self, msg: int, name: str, *args: Primitive, need_result: bool) -> Primitive:
+    def _f(self, msg: int, name: str, *args: Primitive, need_result: bool, t: type[Primitive] = None) -> Any:
         segments = name.split('.')
         self._send(msg, [*args, *segments, len(segments), need_result])
-        return self._from_ahk_str()
+        return self._from_ahk_str(t)
 
     def call(self, name: str, *args: Primitive) -> None:
         """Call a script function without receiving the result, if any. Lowest latency."""
@@ -683,33 +683,57 @@ A_WorkingDir := "{self._file_path.parent}"
         Higher latency, but solution to `AhkCantCallOutInInputSyncCallError`."""
         self._f(Script._Msg.F_MAIN, name, *args, need_result=False)
 
-    def f(self, name: str, *args: Primitive) -> Primitive:
-        """Call a script function and return the result."""
-        return self._f(Script._Msg.F, name, *args, need_result=True)
+    @overload
+    def f(self, name: str, *args: Primitive) -> Primitive: ...
 
-    def f_main(self, name: str, *args: Primitive) -> Primitive:
+    @overload
+    def f[T: Primitive](self, name: str, *args: Primitive, t: type[T]) -> T: ...
+
+    def f(self, name: str, *args: Primitive, t: type[Primitive] = None) -> Any:
+        """Call a script function and return the result."""
+        return self._f(Script._Msg.F, name, *args, need_result=True, t=t)
+
+    @overload
+    def f_main(self, name: str, *args: Primitive) -> Primitive: ...
+
+    @overload
+    def f_main[T: Primitive](self, name: str, *args: Primitive, t: type[T]) -> T: ...
+
+    def f_main(self, name: str, *args: Primitive, t: type[Primitive] = None) -> Any:
         """Same as `f()` but executed on AutoHotkey's main thread.
         Higher latency, but solution to `AhkCantCallOutInInputSyncCallError`."""
-        return self._f(Script._Msg.F_MAIN, name, *args, need_result=True)
+        return self._f(Script._Msg.F_MAIN, name, *args, need_result=True, t=t)
 
-    def _from_ahk_str(self) -> Primitive:
+    def _from_ahk_str(self, t: type[Primitive] = None) -> Any:
         str_ = self._read_response()
+        result: Primitive = str_
+
         if str_:
             match str_[0]:
                 case 'F':
-                    return float(str_[1:])
+                    result = float(str_[1:])
                 case 'I':
-                    return int(str_[1:])
+                    result = int(str_[1:])
                 case 'B':
-                    return str_[1:] == 1
+                    result = str_[1:] == '1'
                 case 'S':
-                    return str_[1:]
-        return str_
+                    result = str_[1:]
 
-    def get(self, name: str) -> Primitive:
+        if t is not None and not isinstance(result, t):
+            raise TypeError(f"Expected {t.__name__}, but received {type(result).__name__}")
+
+        return result
+
+    @overload
+    def get(self, name: str) -> Primitive: ...
+
+    @overload
+    def get[T: Primitive](self, name: str, *, t: type[T]) -> T: ...
+
+    def get(self, name: str, t: type[Primitive] = None) -> Any:
         """Get a global script variable, property, or built-in like `A_TimeIdle`."""
         self._send(Script._Msg.GET, name.split('.'))
-        return self._from_ahk_str()
+        return self._from_ahk_str(t)
 
     def set(self, name: str, val: Primitive) -> None:
         """Set a global script variable, property, or some built-ins like `A_Clipboard`."""

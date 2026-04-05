@@ -281,9 +281,9 @@ def test_halt_descendants():
 
     for halt_process_tree_on_exit in (True, False):
         halt_proc = Script(charmap, halt_process_tree_on_exit=halt_process_tree_on_exit)
-        halt_pid = halt_proc.get('pid')
+        halt_pid = halt_proc.get('pid', t=int)
         orphan_proc = Script(charmap, halt_process_tree_on_exit=halt_process_tree_on_exit)
-        orphan_pid = orphan_proc.get('pid')
+        orphan_pid = orphan_proc.get('pid', t=int)
 
         with suppress(AhkExitException):
             halt_proc.exit(halt_descendants=True)
@@ -308,7 +308,7 @@ def test_halt_uwp_descendants():
     """
 
     halt_proc = Script(calc)
-    halt_pid = halt_proc.get('calc_pid')
+    halt_pid = halt_proc.get('calc_pid', t=int)
     with suppress(AhkExitException):
         halt_proc.exit(halt_descendants=True)
 

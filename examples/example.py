@@ -30,7 +30,7 @@ def main() -> None:
         while True:
             # ahk.poll()  # detect exit, but all `ahk.` functions include this
 
-            event = ahk.get('event')  # contains `ahk.poll()`
+            event = ahk.get('event', t=str)  # contains `ahk.poll()`
             if event:
                 ahk.set('event', '')
                 on_event(event)
