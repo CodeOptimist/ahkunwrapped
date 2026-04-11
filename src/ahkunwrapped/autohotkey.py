@@ -43,7 +43,6 @@ type Primitive = float | int | bool | str
 class AhkException(Exception): pass                         # noqa: E701
 class AhkExitException(AhkException): pass                  # noqa: E701
 class AhkError(AhkException): pass                          # noqa: E701
-class AhkFuncNotFoundError(AhkError): pass                  # noqa: E701
 class AhkUnsupportedValueError(AhkError): pass              # noqa: E701
 class AhkCantCallOutInInputSyncCallError(AhkError): pass    # noqa: E701
 class AhkWarning(UserWarning): pass                         # noqa: E701
@@ -147,13 +146,13 @@ class Script:
     }
 
     ; we can't peek() stdout/stderr, so always write to both or we will over-read and hang waiting
-    _Py_StdOut(outText, onMain := False) {
+    _Py_StdOut(outText, onMain) {
         global _pyOutText, _pyOutOffset, _pyErrText, _pyErrOffset
         _Py_Response(_pyStdOut, _pyOutText := outText, _pyOutOffset := 0, onMain)
         _Py_Response(_pyStdErr, _pyErrText := "", _pyErrOffset := 0, onMain)
     }
 
-    _Py_StdErr(name, errText, onMain := False) {
+    _Py_StdErr(name, errText, onMain) {
         global _pyOutText, _pyOutOffset, _pyErrText, _pyErrOffset
         _Py_Response(_pyStdOut, _pyOutText := "", _pyOutOffset := 0, onMain)
         _Py_Response(_pyStdErr, _pyErrText := name _PY_SEPARATOR errText, _pyErrOffset := 0, onMain)
@@ -211,43 +210,58 @@ class Script:
         ''' + _comment_debug() + '''if (not onMain)
         ''' + _comment_debug() + '''    _Py_DebugMsg(wParam, msg)
 
-        static funcName, func
+        static funcName
         funcName := _pyThreadMsgData[wParam].RemoveAt(1)
-        func := unset
-        try func := %funcName%
-
-        if not (IsSet(func) and HasMethod(func)) {
-            _pyThreadMsgData.Delete(wParam)
-            _Py_StdErr("''' + AhkFuncNotFoundError.__name__ + '''", funcName, onMain)
-            return 1  ; :MsgReturn
-        }
-        needResult := _pyThreadMsgData[wParam].RemoveAt(1)
 
         static ex
-        try result := func(_pyThreadMsgData[wParam]*)
-        catch Any as ex {
-            _pyThreadMsgData.Delete(wParam)
-            if (ex is Error)
-                _Py_StdErr("''' + AhkUserException.__name__ + '''", True _PY_SEPARATOR ex.Message _PY_SEPARATOR ex.What _PY_SEPARATOR ex.Extra _PY_SEPARATOR ex.File _PY_SEPARATOR ex.Line, onMain)
-            else
-                _Py_StdErr("''' + AhkUserException.__name__ + '''", False _PY_SEPARATOR (HasMethod(ex, "ToString") ? String(ex) : Type(ex)), onMain)
-
+        try {
+        	static func, needResult, result
+            func := %funcName%
+            needResult := _pyThreadMsgData[wParam].RemoveAt(1)
+            result := func(_pyThreadMsgData[wParam]*)
+            _Py_StdOut(needResult ? SubStr(Type(result), 1, 1) . String(result) : "", onMain)  ; :CatchToString
+        } catch Any as ex {
+            _Py_UserException(ex, onMain)
             return 1  ; :MsgReturn
+        } finally {
+            _pyThreadMsgData.Delete(wParam)
         }
 
-        _pyThreadMsgData.Delete(wParam)
-        _Py_StdOut(needResult ? SubStr(Type(result), 1, 1) . String(result) : "", onMain)
         return 1  ; :MsgReturn
+    }
+
+    _Py_UserException(ex, onMain) {
+        SafeString(val) {
+            try return String(val)
+            catch
+                return ""
+        }
+
+        if (ex is Error)
+            _Py_StdErr("''' + AhkUserException.__name__ + '''", True _PY_SEPARATOR ex.Message _PY_SEPARATOR ex.What _PY_SEPARATOR ex.Extra _PY_SEPARATOR ex.File _PY_SEPARATOR ex.Line, onMain)
+        else {
+            _Py_StdErr("''' + AhkUserException.__name__ + '''", False _PY_SEPARATOR SafeString(ex) _PY_SEPARATOR Type(ex), onMain)
+        }
     }
 
     _Py_MsgGet(wParam, lParam, msg, hwnd) {
         ''' + _comment_debug() + '''_Py_DebugMsg(wParam, msg)
 
-        static name, val
+        static name
         name := _pyThreadMsgData[wParam].RemoveAt(1)
-        val := %name%
-        _pyThreadMsgData.Delete(wParam)
-        _Py_StdOut(SubStr(Type(val), 1, 1) . String(val))
+
+        static ex
+        try {
+            static val
+            val := %name%
+            _Py_StdOut(SubStr(Type(val), 1, 1) . String(val), False)  ; :CatchToString
+        } catch Any as ex {
+            _Py_UserException(ex, False)
+            return 1  ; :MsgReturn
+        } finally {
+            _pyThreadMsgData.Delete(wParam)
+        }
+
         return 1  ; :MsgReturn
     }
 
@@ -284,9 +298,21 @@ class Script:
     OnMessage(''' + str(_Msg.MORE) + '''            , _Py_MsgMore)
     OnMessage(''' + str(_Msg.EXIT) + '''            , _Py_MsgExit)
 
-    _Py_StdOut(String(A_ScriptHwnd))
-    try %"Startup"%() ; call if exists
-    _Py_StdOut("Initialized")
+    _Py_StdOut(String(A_ScriptHwnd), True)
+
+    _Py_Startup() {
+        static func
+        try func := %"Startup"%
+        if IsSet(func) and HasMethod(func) {
+            static ex
+            try func()
+            catch Any as ex
+                _Py_UserException(ex, True)
+        }
+    }
+    _Py_Startup()
+
+    _Py_StdOut("Initialized", True)
     return
 
     ; an unused label so `#Warn` won't complain that the script's auto-execute section is unreachable

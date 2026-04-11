@@ -62,7 +62,7 @@ def test_smile(f):
 
 @given(st.sampled_from([ahk.call, ahk.call_main, ahk.f, ahk.f_main]))
 def test_missing_func(func):
-    with pytest.raises(autohotkey.AhkFuncNotFoundError):
+    with pytest.raises(autohotkey.AhkUserException):
         func('ThisDoesntExist')
 
 
@@ -98,6 +98,22 @@ def test_userexception_lineno():
     except autohotkey.AhkUserException as e:
         line_num = 1 + next(num for (num, line) in enumerate(ahk._script.split('\n')) if line.startswith('    throw Error("UserException"'))
         assert e.line == line_num
+
+
+def test_startup_userexception():
+    try:
+        Script("""
+            Startup() {
+                throw Error("UserException", "example what", "example extra")
+            }
+        """)
+        assert False
+    except autohotkey.AhkUserException as e:
+        assert e.message == "UserException"
+        assert e.what == "example what"
+        assert e.extra == "example extra"
+        assert e.file == "*"
+        assert e.line == 3
 
 
 def test_included_userexception():
@@ -136,7 +152,7 @@ def test_nonerror_warning_lineno():
 # if failed, adjust its `stacklevel=`
 def test_warning_lineno():
     with warnings.catch_warnings(record=True) as w:
-        ahk.call('_Py_StdErr', autohotkey.AhkWarning.__name__, "some generic warning")  # get directly because unused atm
+        ahk.call('_Py_StdErr', autohotkey.AhkWarning.__name__, "some generic warning", False)  # get directly because unused atm
         frame = currentframe()
         assert frame is not None and w is not None
         assert w[0].filename == getframeinfo(frame).filename and w[0].lineno == frame.f_lineno - 3  # the call is 3 lines above us
