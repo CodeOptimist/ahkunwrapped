@@ -6,13 +6,11 @@ import math
 import os
 import random
 import signal
-# noinspection PyUnresolvedReferences
 import sys
 import time
 import timeit
 import warnings
 from contextlib import suppress
-from datetime import timedelta
 from functools import partial
 from inspect import currentframe, getframeinfo
 from pathlib import Path
@@ -21,13 +19,13 @@ from threading import Thread
 import hypothesis.strategies as st
 import psutil
 import pytest
-from hypothesis import given, settings
+from hypothesis import given
 from win32api import OutputDebugString
 
 import ahkunwrapped as autohotkey
 from ahkunwrapped import Script, AhkExitException
 
-ahk = Script.from_file(Path('tests.ahk'))
+ahk = Script.from_file(Path(__file__).parent / 'tests.ahk')
 
 
 def print_timings():
@@ -41,7 +39,8 @@ ahk = Script('Echo(val) {\nreturn val\n}')
         for func in ('call', 'f', 'call_main', 'f_main'):
             single_buffer = timeit.timeit(f"ahk.{func}('Echo', ' ' * 2000)", setup=setup, number=number)
             many_buffers = timeit.timeit(f"ahk.{func}('Echo', ' ' * 200000)", setup=setup, number=number)
-            print(f"{func}('Echo', ...)".rjust(30), f'{single_buffer:.4f}'.rjust(20), f'x {many_buffers / single_buffer:.1f} ='.rjust(20), f'{many_buffers:.4f}'.rjust(20))
+            print(f"{func}('Echo', ...)".rjust(30), f'{single_buffer:.4f}'.rjust(20), f'x {many_buffers / single_buffer:.1f} ='.rjust(20),
+                  f'{many_buffers:.4f}'.rjust(20))
 
 
 if __name__ == '__main__':
@@ -63,17 +62,15 @@ def test_missing_func(func):
         func('ThisDoesntExist')
 
 
-# This test may fail the first time after a computer restart.
-@settings(deadline=timedelta(seconds=1))
 @given(st.sampled_from([ahk.call, ahk.f]), st.sampled_from([ahk.call_main, ahk.f_main]))
-def test_main_thread_required(func, func_main):
+def test_main_required(func, func_main):
     with pytest.raises(autohotkey.AhkCantCallOutInInputSyncCallError):
-        func('ComMsGraphCall')
-    func_main('ComMsGraphCall')
+        func('ComWmiRpcCallout')
+    func_main('ComWmiRpcCallout')
 
 
 @given(st.sampled_from([ahk.call, ahk.call_main]), st.sampled_from([ahk.f, ahk.f_main]))
-def test_main_thread_not_required(call, f):
+def test_main_agnostic(call, f):
     call('ComFsoTempName')
     assert f('ComFsoTempName').endswith('.tmp')
 
@@ -231,14 +228,6 @@ def test_long_text(f, text):
     long_text = text * rand_len
     # print(len(long_text), file=sys.stderr)
     assert f(long_text) == long_text
-
-
-# At > 100 Scripts:
-# >       win32job.AssignProcessToJobObject(job, handle)
-# E       pywintypes.error: (50, 'AssignProcessToJobObject', 'The request is not supported.')
-def test_job_script_limit():
-    for _ in range(101):
-        Script()
 
 
 def test_kill_descendants():

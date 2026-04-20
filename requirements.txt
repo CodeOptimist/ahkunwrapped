@@ -1,4 +1,0 @@
-pywin32>=227
-pytest~=7.0.1
-hypothesis~=6.31.6
-psutil~=5.9.3

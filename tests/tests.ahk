@@ -21,8 +21,8 @@ GetSmile() {
     return "🙂"
 }
 
-ComMsGraphCall() {
-    comMsGraph := ComObjCreate("MSGraph.Application")
+ComWmiRpcCallout() {
+    ComObjCreate("WbemScripting.SWbemLocator").ConnectServer()
 }
 
 ComFsoTempName() {

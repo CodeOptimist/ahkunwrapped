@@ -16,8 +16,8 @@ class Event(Enum):
     QUIT, SEND_CHOICE, CLEAR_CHOICE, CHOOSE_MONTH, CHOOSE_DAY = range(5)
 
 
-# format_dict= so we can use {{VARIABLE}} within example.ahk
-ahk = Script.from_file(Path('example.ahk'), format_dict=globals())
+# `format_dict=` so we can use `{{VARIABLE}}` within example.ahk
+ahk = Script.from_file(Path(__file__).parent / 'example.ahk', format_dict=globals())
 
 
 def main() -> None:

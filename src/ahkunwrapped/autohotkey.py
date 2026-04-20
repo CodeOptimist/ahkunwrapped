@@ -13,14 +13,14 @@ import sys
 import threading
 import time
 # import traceback
-from contextlib import suppress, contextmanager
+from contextlib import contextmanager, suppress
+from dataclasses import dataclass
 from itertools import chain
 from pathlib import Path
 from subprocess import TimeoutExpired
-from typing import ClassVar, Mapping, Optional, Sequence, Tuple, Union, ContextManager
+from typing import ClassVar, ContextManager, Mapping, Optional, Sequence, Tuple, Union
 from warnings import warn
 
-import pywintypes
 import win32api
 import win32con
 import win32job
@@ -31,10 +31,10 @@ IN_PYINSTALLER = getattr(sys, 'frozen', False)
 # noinspection PyProtectedMember,PyUnresolvedReferences
 PACKAGE_PATH = Path(sys._MEIPASS) if IN_PYINSTALLER else Path(__file__).parent
 SINGLE_JOB_ASSIGNMENTS = sys.getwindowsversion().major < 8  # https://stackoverflow.com/q/13449531/
-if SINGLE_JOB_ASSIGNMENTS:
-    import inspect
+assert not SINGLE_JOB_ASSIGNMENTS
 
 
+# @formatter:off
 class AhkException(Exception): pass                         # noqa: E701
 class AhkExitException(AhkException): pass                  # noqa: E701
 class AhkError(AhkException): pass                          # noqa: E701
@@ -42,6 +42,7 @@ class AhkFuncNotFoundError(AhkError): pass                  # noqa: E701
 class AhkUnsupportedValueError(AhkError): pass              # noqa: E701
 class AhkCantCallOutInInputSyncCallError(AhkError): pass    # noqa: E701
 class AhkWarning(UserWarning): pass                         # noqa: E701
+# @formatter:on
 
 
 class AhkLossOfPrecisionWarning(AhkWarning):
@@ -49,22 +50,19 @@ class AhkLossOfPrecisionWarning(AhkWarning):
         super().__init__(f'loss of precision from {val} to {val_str}')
 
 
-# Python 3.7 would use @dataclass
+@dataclass
 class AhkUserException(AhkException):
-    def __init__(self, from_exception_obj: str, message: str, what: str, extra: str, file: str, line: str):
-        self.from_exception_obj: bool = from_exception_obj == "1"
-        self.message: str = message
-        self.what: str = what
-        self.extra: str = extra
-        self.file: str = file
-        self.line: str = line
+    from_exception_obj: bool
+    message: str
+    what: str
+    extra: str
+    file: str
+    line: int
 
-    def __str__(self) -> str:
-        # Python 3.8 would use return f"{message=}, {what=}, {extra=}, {file=}, {line=}"
-        return f"(message={repr(self.message)}, what={repr(self.what)}, extra={repr(self.extra)}, file={repr(self.file)}, line={repr(self.line)})"
+    def __post_init__(self):
+        self.from_exception_obj = self.from_exception_obj == "1"
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}{self}"
+        self.args = (self.message, self.what, self.extra, self.file, self.line)
 
 
 class AhkCaughtNonExceptionWarning(AhkWarning):
@@ -77,20 +75,8 @@ class AhkCaughtNonExceptionWarning(AhkWarning):
         super().__init__(message)
 
 
-class WinXPJobObjectWarning(UserWarning):  # for Vista and Windows 7
-    def __init__(self, message: str):
-        message += f"""
-\tRecommend polling within AutoHotkey: https://github.com/CodeOptimist/ahkunwrapped/issues/1
-\tAlternatives: https://stackoverflow.com/q/13471611
-\tThis isn't an issue on Windows 8+ due to nestable jobs."""
-        super().__init__(message)
-
-class ExistingWinXPJobObjectWarning(WinXPJobObjectWarning): pass
-class SingleWinXPJobObjectWarning(WinXPJobObjectWarning): pass
-
-
 def comment_debug() -> str:
-    return ";" if "pytest" not in sys.modules else ""
+    return "" if "pytest" in sys.modules else ";"
 
 
 Primitive = Union[bool, float, int, str]
@@ -389,7 +375,6 @@ class Script:
         self.cmd = [str(ahk_path), "/CP65001", "*"]  # utf-8 :StdInEncoding
 
         self.popen = subprocess.Popen(self.cmd, bufsize=Script.BUFFER_SIZE, executable=str(ahk_path),
-                                      # must pipe all three for PyInstaller onefile exe
                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         # NOTE: PROCESS EXPLORER WILL MISLEAD BY SHOWING ONE OR THE OTHER JOB BUT NOT BOTH @CodeOptimist 2022-10
@@ -412,29 +397,15 @@ class Script:
 
         @contextmanager
         def get_handle(handle: object) -> ContextManager[object]:
-            try: yield handle
-            finally: win32api.CloseHandle(handle)
+            try:
+                yield handle
+            finally:
+                win32api.CloseHandle(handle)
 
-        with get_handle(win32api.OpenProcess(win32con.PROCESS_TERMINATE | win32con.PROCESS_SET_QUOTA, False, self.popen.pid)) as ahk_handle:  # both flags required
-            if SINGLE_JOB_ASSIGNMENTS:
-                try:
-                    has_tree_job = win32job.AssignProcessToJobObject(self.tree_job, ahk_handle)  # the better choice when we can only have 1
-                    win32job.AssignProcessToJobObject(Script.python_job, ahk_handle)  # this will fail
-                except pywintypes.error as ex:
-                    if ex.winerror != 5:
-                        raise
-                    stacklevel = 3 if inspect.currentframe().f_back.f_code.co_name == 'from_file' else 2  # :FromFile
-                    if 'has_tree_job' in locals():
-                        message = f"""Couldn't assign AutoHotkey (PID {self.popen.pid}) to Python job object because already assigned to tree job object.
-\tAs such, AutoHotkey won't automatically terminate when Python exits unexpectedly unless `kill_process_tree_on_exit` is set `True`."""
-                        warn(SingleWinXPJobObjectWarning(message), stacklevel=stacklevel)
-                    else:
-                        message = f"""Couldn't assign AutoHotkey (PID {self.popen.pid}) to a job object because one was already inherited (breakaway is unlikely to succeed).
-\tAs such, `Script.exit(kill_descendants=True)` and `Script(kill_process_tree_on_exit=True)` have no effect, nor will AutoHotkey terminate if Python exits unexpectedly."""
-                        warn(ExistingWinXPJobObjectWarning(message), stacklevel=stacklevel)
-            else:
-                win32job.AssignProcessToJobObject(Script.python_job, ahk_handle)  # this one needs to be first to avoid 'Access denied', also see :AvoidJobRace
-                win32job.AssignProcessToJobObject(self.tree_job, ahk_handle)  # no race here, AutoHotkey won't `Run` a child process before "Initialized"
+        # both flags required
+        with get_handle(win32api.OpenProcess(win32con.PROCESS_TERMINATE | win32con.PROCESS_SET_QUOTA, False, self.popen.pid)) as ahk_handle:
+            win32job.AssignProcessToJobObject(Script.python_job, ahk_handle)  # this one needs to be first to avoid 'Access denied', also see :AvoidJobRace
+            win32job.AssignProcessToJobObject(self.tree_job, ahk_handle)  # no race here, AutoHotkey won't `Run` a child process before "Initialized"
 
         # variable length utf-8 is fine here :StdInEncoding
         self.popen.stdin.write(Script.CORE.encode('utf-8'))
@@ -450,7 +421,8 @@ class Script:
         atexit.register(self._on_python_exit)  # if we exit, exit AutoHotkey
 
     @staticmethod
-    def from_file(path: Path, format_dict: Mapping[str, str] = None, ahk_path: Path = None, execute_from: Path = None, kill_process_tree_on_exit: bool = None) -> 'Script':  # :FromFile
+    def from_file(path: Path, format_dict: Mapping[str, str] = None, ahk_path: Path = None, execute_from: Path = None,
+                  kill_process_tree_on_exit: bool = None) -> 'Script':  # :FromFile
         """Launch an AutoHotkey process from a script file.
 
         :param path: Path to file.
@@ -459,8 +431,7 @@ class Script:
         :param execute_from: See `Script()`.
         :param kill_process_tree_on_exit: See `Script()`.
         """
-        with path.open(encoding='utf-8') as f:
-            script = f.read()
+        script = path.read_text(encoding='utf-8')
         if format_dict is not None:
             # `format()` will mistake function braces as placeholders, so escape those first
             script = script.replace(r'{', r'{{').replace(r'}', r'}}')  # {foo} -> {{foo}}
@@ -496,7 +467,7 @@ class Script:
             self._send_message(Script.MSG_MORE)
         if self.lock is not None:
             self.lock.release()
-        return (err.decode('utf-16-le')), (out.decode('utf-16-le'))
+        return err.decode('utf-16-le'), out.decode('utf-16-le')
 
     def _read_response(self) -> str:
         err, out = self._read_pipes()
