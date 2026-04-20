@@ -43,3 +43,6 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ahkunwrapped"]
+exclude = [
+    "src/ahkunwrapped/typings",
+]

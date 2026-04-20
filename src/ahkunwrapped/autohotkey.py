@@ -13,13 +13,13 @@ import sys
 import threading
 import time
 # import traceback
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from enum import IntEnum
-from itertools import chain
 from pathlib import Path
 from subprocess import TimeoutExpired
-from typing import ClassVar, ContextManager, Mapping, Optional, Sequence, Tuple, Union
+from typing import ClassVar, Final
 from warnings import warn
 
 import win32api
@@ -29,11 +29,13 @@ import winerror
 # noinspection PyUnresolvedReferences
 from win32api import OutputDebugString
 
-_IN_PYINSTALLER = getattr(sys, 'frozen', False)
+_IN_PYINSTALLER: Final = getattr(sys, 'frozen', False)
 # noinspection PyProtectedMember,PyUnresolvedReferences
-_PACKAGE_PATH = Path(sys._MEIPASS) if _IN_PYINSTALLER else Path(__file__).parent
-_SINGLE_JOB_ASSIGNMENTS = sys.getwindowsversion().major < 8  # https://stackoverflow.com/q/13449531/
+_PACKAGE_PATH: Final = Path(sys._MEIPASS) if _IN_PYINSTALLER else Path(__file__).parent
+_SINGLE_JOB_ASSIGNMENTS: Final = sys.getwindowsversion().major < 8  # https://stackoverflow.com/q/13449531/
 assert not _SINGLE_JOB_ASSIGNMENTS
+
+type Primitive = bool | float | int | str
 
 
 # @formatter:off
@@ -81,9 +83,6 @@ def _comment_debug() -> str:
     return "" if "pytest" in sys.modules else ";"
 
 
-Primitive = Union[bool, float, int, str]
-
-
 class Script:
     class _Msg(IntEnum):
         # @formatter:off
@@ -97,17 +96,17 @@ class Script:
 
     SEPARATOR: ClassVar[str] = '\3'  # :Separator
 
-    _BUFFER_SIZE: ClassVar[int] = 4096
+    _BUFFER_SIZE: Final[int] = 4096
     # we read one line at a time, but need a unique reserved character
     #  to signify the end of message, and not just a newline within it
-    _EOM = SEPARATOR.encode('utf-16-le') + b'\n'  # :Eom :OneByteNewline
-    _EOM_SIZE = 1 + len(_EOM)  # include :IsFinal bool
-    _TEXT_SIZE: ClassVar[int] = _BUFFER_SIZE - _EOM_SIZE
+    _EOM: Final = SEPARATOR.encode('utf-16-le') + b'\n'  # :Eom :OneByteNewline
+    _EOM_SIZE: Final = 1 + len(_EOM)  # include :IsFinal bool
+    _TEXT_SIZE: Final[int] = _BUFFER_SIZE - _EOM_SIZE
 
-    _python_pid: ClassVar = os.getpid()
-    _python_job_obj: ClassVar = None
+    _python_pid: Final = os.getpid()
+    _python_job_obj: ClassVar[int]
 
-    _CORE: ClassVar[str] = '''
+    _CORE: Final[str] = '''
     _pyUserBatchLines := A_BatchLines
     SetBatchLines, -1
     Process, Exist, ''' + str(_python_pid) + '''
@@ -395,7 +394,7 @@ class Script:
         win32job.SetInformationJobObject(self._tree_job_obj, win32job.JobObjectExtendedLimitInformation, extended_info)
 
         @contextmanager
-        def get_handle(handle: object) -> ContextManager[object]:
+        def get_handle(handle: int) -> Iterator[int]:
             try:
                 yield handle
             finally:
@@ -421,7 +420,7 @@ class Script:
 
     @staticmethod
     def from_file(path: Path, format_dict: Mapping[str, str] = None, ahk_path: Path = None, execute_from: Path = None,
-                  halt_process_tree_on_exit: bool = None) -> 'Script':  # :FromFile
+                  halt_process_tree_on_exit: bool = False) -> 'Script':  # :FromFile
         """Launch an AutoHotkey process from a script file.
 
         :param path: Path to file.
@@ -441,7 +440,7 @@ class Script:
         script._file = path  # for exceptions
         return script
 
-    def _read_pipes(self) -> Tuple[str, str]:
+    def _read_pipes(self) -> tuple[str, str]:
         err, out = bytearray(), bytearray()
         while True:
             def end_of_message(bytearray_: bytearray) -> bool:
@@ -473,7 +472,7 @@ class Script:
         if err:
             name, args = err.split(Script.SEPARATOR, 1)
 
-            exception_class = next((ex for ex in chain(AhkError.__subclasses__(), AhkException.__subclasses__(), (AhkException,)) if ex.__name__ == name), None)
+            exception_class = next((ex for ex in (*AhkError.__subclasses__(), *AhkException.__subclasses__(), AhkException) if ex.__name__ == name), None)
             if exception_class:
                 exception = exception_class(*args.split(Script.SEPARATOR))
                 if isinstance(exception, AhkUserException):
@@ -490,7 +489,7 @@ class Script:
                         warn(AhkCaughtNonExceptionWarning(exception), stacklevel=4)
                 raise exception
 
-            warning_class = next((w for w in chain(AhkWarning.__subclasses__(), (AhkWarning,)) if w.__name__ == name), None)
+            warning_class = next((w for w in (*AhkWarning.__subclasses__(), AhkWarning) if w.__name__ == name), None)
             if warning_class:
                 warning = warning_class(*args.split(Script.SEPARATOR))
                 warn(warning, stacklevel=4)
@@ -501,6 +500,7 @@ class Script:
     def _send_message(self, msg: int, lparam: bytes = None) -> None:
         # this is essential because messages are ignored if we're uninterruptible (e.g. in a menu)
         # wparam is normally source window handle, but in our case source thread id
+        # noinspection PyTypeChecker
         while not win32api.SendMessage(self._hwnd, msg, threading.get_ident(), lparam):
             self.poll()
             time.sleep(0.01)
@@ -535,7 +535,7 @@ class Script:
             val_str = str(val)
         return f"{type(val).__name__[:5]:<5} {val_str}"  # padded len(5) :TypePrefix
 
-    def _f(self, msg: int, name: str, *args: Primitive, need_result: bool, coerce_result: bool = False) -> Optional[str]:
+    def _f(self, msg: int, name: str, *args: Primitive, need_result: bool, coerce_result: bool = False) -> Primitive:
         self._send(msg, [name, need_result] + list(args))
         response = self._read_response()
         return self._from_ahk_str(response) if coerce_result else response
@@ -614,7 +614,7 @@ class Script:
         with suppress(AhkExitException):  # Expected and not exceptional.
             self.exit()
 
-    def exit(self, timeout: float = 5.0, halt_descendants: Optional[bool] = None) -> None:
+    def exit(self, timeout: float = 5.0, halt_descendants: bool = None) -> None:
         """Ask AutoHotkey to exit cleanly (remove system tray icon, etc.).
         To my knowledge only an `OnExit()` callback could delay this.
 
