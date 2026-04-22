@@ -3,6 +3,7 @@
 
 import array
 import atexit
+import io
 import math
 import os
 import shutil
@@ -19,7 +20,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
 from subprocess import TimeoutExpired
-from typing import ClassVar, Final
+from typing import ClassVar, Final, IO
 from warnings import warn
 
 import win32api
@@ -368,12 +369,17 @@ class Script:
                     shutil.copyfile(ahk_path, ahk_into_folder)
             ahk_path = ahk_into_folder
 
-        # user script exceptions are already caught and sent to stderr, so /ErrorStdOut would only affect debugging CORE
-        # cmd = [str(ahk_path), "/ErrorStdOut=utf-16-raw", "/CP65001", "*"]
-        cmd = [str(ahk_path), "/CP65001", "*"]  # utf-8 :StdInEncoding
+        # An asterisk to read the script from standard input. (It will safely terminate if an exception is raised beforehand.)
+        # (User script exceptions are already caught and sent to stderr, so `/ErrorStdOut` would only affect debugging CORE.)
+        #  cmd = [str(ahk_path), "/ErrorStdOut=utf-16-raw", "*"]
+        cmd = [str(ahk_path), "/CP65001", "*"]  # utf-8
 
         self._popen = subprocess.Popen(cmd, bufsize=Script._BUFFER_SIZE, executable=str(ahk_path),
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert self._popen.stdin and self._popen.stdout and self._popen.stderr
+        self._ahk_stdin = io.TextIOWrapper(self._popen.stdin, encoding='utf-8', write_through=True)
+        self._ahk_stdout: IO[bytes] = self._popen.stdout
+        self._ahk_stderr: IO[bytes] = self._popen.stderr
 
         # NOTE: PROCESS EXPLORER WILL MISLEAD BY SHOWING ONE OR THE OTHER JOB BUT NOT BOTH @CodeOptimist 2022-10
         # https://learn.microsoft.com/en-gb/windows/win32/api/winbase/nf-winbase-createjobobjecta
@@ -405,10 +411,9 @@ class Script:
             win32job.AssignProcessToJobObject(Script._python_job_obj, ahk_handle)  # this one needs to be first to avoid 'Access denied', also see :AvoidJobRace
             win32job.AssignProcessToJobObject(self._tree_job_obj, ahk_handle)  # no race here, AutoHotkey won't `Run` a child process before "Initialized"
 
-        # variable length utf-8 is fine here :StdInEncoding
-        self._popen.stdin.write(Script._CORE.encode('utf-8'))
-        self._popen.stdin.write(self._script.encode('utf-8'))
-        self._popen.stdin.close()
+        self._ahk_stdin.write(Script._CORE)
+        self._ahk_stdin.write(self._script)
+        self._ahk_stdin.close()
 
         self._lock = None
         self._hwnd = int(self._read_response(), 16)
@@ -451,9 +456,9 @@ class Script:
             # but we can at least go line by line since we always end with \n
             err_buffer, out_buffer = bytearray(), bytearray()
             while not end_of_message(out_buffer):
-                out_buffer += self._popen.stdout.readline()  # :OneByteNewline
+                out_buffer += self._ahk_stdout.readline()  # :OneByteNewline
             while not end_of_message(err_buffer):
-                err_buffer += self._popen.stderr.readline()
+                err_buffer += self._ahk_stderr.readline()
 
             err += err_buffer[:-Script._EOM_SIZE]  # : Eom
             out += out_buffer[:-Script._EOM_SIZE]
