@@ -519,6 +519,7 @@ class Script:
         data_type_id = msg  # anything; unneeded atm
         struct_ = struct.pack('PLP', data_type_id, size, addr)
         self._send_message(win32con.WM_COPYDATA, struct_)
+        assert self._lock is not None
         self._lock.acquire(blocking=True)  # set `False` to witness threads test failure :TestThreads
         self._send_message(msg)
 
@@ -600,9 +601,10 @@ class Script:
 
     def set(self, name: str, val: Primitive) -> None:
         """Set a global script variable."""
-        # Every _send() will lock, so others are finished before we set().
+        # Every `_send()` will lock, so others are finished before we `set()`.
         #  We don't need a confirmation response, just the ensurance that it finishes before others begin.
         self._send(Script._Msg.SET, [name, val])
+        assert self._lock is not None
         self._lock.release()  # normally done within `_read_response()`
 
     # if AutoHotkey is terminated, get error code
