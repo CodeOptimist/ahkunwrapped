@@ -24,6 +24,7 @@ from warnings import warn
 import win32api
 import win32con
 import win32job
+import winerror
 # noinspection PyUnresolvedReferences
 from win32api import OutputDebugString
 
@@ -361,9 +362,7 @@ class Script:
             except FileExistsError:
                 pass
             except OSError as ex:
-                # 5: "Access is denied"
-                # 17: "The system cannot move the file to a different disk drive"
-                if ex.winerror in (5, 17):
+                if ex.winerror in (winerror.ERROR_ACCESS_DENIED, winerror.ERROR_NOT_SAME_DEVICE):
                     shutil.copyfile(ahk_path, ahk_into_folder)
             ahk_path = ahk_into_folder
 
