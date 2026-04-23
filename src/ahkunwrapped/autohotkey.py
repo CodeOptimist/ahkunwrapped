@@ -170,7 +170,8 @@ class Script:
 
         ; Since messages can arrive from multiple threads (e.g. clicking 'Reload' within OBS Studio 'Scripts' window,
         ;  while a timer is also running within said script) we need to keep their input data separate.
-        _pyThreadMsgData[wParam] := []
+        static data
+        data := _pyThreadMsgData[wParam] := []
         ; limitation of Parse and StrSplit(): separator must be a single character :Separator
         Loop Parse, copyData, _PY_SEPARATOR
         {
@@ -185,7 +186,7 @@ class Script:
             else if (type = "b")
                 val := (val == "1")
 
-            _pyThreadMsgData[wParam].Push(val)
+            data.Push(val)
         }
         return 1  ; :MsgReturn
     }
@@ -210,15 +211,15 @@ class Script:
         ''' + _comment_debug() + '''if (not onMain)
         ''' + _comment_debug() + '''    _Py_DebugMsg(wParam, msg)
 
-        static funcName
-        funcName := _pyThreadMsgData[wParam].RemoveAt(1)
-
+        static data, funcName
+        data := _pyThreadMsgData[wParam]
+        funcName := data.RemoveAt(1)
         static ex
         try {
         	static func, needResult, result
             func := %funcName%
-            needResult := _pyThreadMsgData[wParam].RemoveAt(1)
-            result := func(_pyThreadMsgData[wParam]*)
+            needResult := data.RemoveAt(1)
+            result := func(data*)
             _Py_StdOut(needResult ? SubStr(Type(result), 1, 1) . String(result) : "", onMain)  ; :CatchToString
         } catch Any as ex {
             _Py_UserException(ex, onMain)
@@ -247,8 +248,9 @@ class Script:
     _Py_MsgGet(wParam, lParam, msg, hwnd) {
         ''' + _comment_debug() + '''_Py_DebugMsg(wParam, msg)
 
-        static name
-        name := _pyThreadMsgData[wParam].RemoveAt(1)
+        static data, name
+        data := _pyThreadMsgData[wParam]
+        name := data.RemoveAt(1)
 
         static ex
         try {
@@ -269,9 +271,10 @@ class Script:
         global
         ''' + _comment_debug() + '''_Py_DebugMsg(wParam, msg)
 
-        static name
-        name := _pyThreadMsgData[wParam].RemoveAt(1)
-        %name% := _pyThreadMsgData[wParam].RemoveAt(1)
+        static data, name
+        data := _pyThreadMsgData[wParam]
+        name := data.RemoveAt(1)
+        %name% := data.RemoveAt(1)
         _pyThreadMsgData.Delete(wParam)
         return 1  ; :MsgReturn
     }
