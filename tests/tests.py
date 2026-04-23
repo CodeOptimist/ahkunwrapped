@@ -230,7 +230,7 @@ def test_long_text(f, text):
     assert f(long_text) == long_text
 
 
-def test_kill_descendants():
+def test_halt_descendants():
     charmap = """
         AutoExec() {
             global pid
@@ -238,27 +238,27 @@ def test_kill_descendants():
         }
     """
 
-    for kill_process_tree_on_exit in (True, False):
-        kill_proc = Script(charmap, kill_process_tree_on_exit=kill_process_tree_on_exit)
-        kill_pid = kill_proc.get('pid')
-        orphan_proc = Script(charmap, kill_process_tree_on_exit=kill_process_tree_on_exit)
+    for halt_process_tree_on_exit in (True, False):
+        halt_proc = Script(charmap, halt_process_tree_on_exit=halt_process_tree_on_exit)
+        halt_pid = halt_proc.get('pid')
+        orphan_proc = Script(charmap, halt_process_tree_on_exit=halt_process_tree_on_exit)
         orphan_pid = orphan_proc.get('pid')
 
         with suppress(AhkExitException):
-            kill_proc.exit(kill_descendants=True)
-            orphan_proc.exit(kill_descendants=False)
+            halt_proc.exit(halt_descendants=True)
+            orphan_proc.exit(halt_descendants=False)
 
         time.sleep(1)
-        assert not psutil.pid_exists(kill_pid), f"kill_process_tree_on_exit={kill_process_tree_on_exit}"
+        assert not psutil.pid_exists(halt_pid), f"halt_process_tree_on_exit={halt_process_tree_on_exit}"
         try:
-            assert psutil.pid_exists(orphan_pid), f"kill_process_tree_on_exit={kill_process_tree_on_exit}"
+            assert psutil.pid_exists(orphan_pid), f"halt_process_tree_on_exit={halt_process_tree_on_exit}"
         finally:
             os.kill(orphan_pid, signal.SIGTERM)
 
 
 @pytest.mark.skipif(sys.getwindowsversion().major < 10, reason="Calculator was replaced with a UWP app in Windows 10.")
 @pytest.mark.xfail(strict=True)  # expected fail
-def test_kill_uwp_descendants():
+def test_halt_uwp_descendants():
     calc = """
         AutoExec() {
             global calc_pid
@@ -266,16 +266,16 @@ def test_kill_uwp_descendants():
         }
     """
 
-    kill_proc = Script(calc)
-    kill_pid = kill_proc.get('calc_pid')
+    halt_proc = Script(calc)
+    halt_pid = halt_proc.get('calc_pid')
     with suppress(AhkExitException):
-        kill_proc.exit(kill_descendants=True)
+        halt_proc.exit(halt_descendants=True)
 
     time.sleep(1)
     try:
-        assert not psutil.pid_exists(kill_pid)
+        assert not psutil.pid_exists(halt_pid)
     finally:
-        os.kill(kill_pid, signal.SIGTERM)
+        os.kill(halt_pid, signal.SIGTERM)
 
 
 # Recommend DebugView++ to view OutputDebugString: `winget install DebugViewPP`
