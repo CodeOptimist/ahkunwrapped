@@ -105,7 +105,7 @@ class Script:
     _TEXT_SIZE: ClassVar[int] = _BUFFER_SIZE - _EOM_SIZE
 
     _python_pid: ClassVar = os.getpid()
-    _python_job: ClassVar = None
+    _python_job_obj: ClassVar = None
 
     _CORE: ClassVar[str] = '''
     _pyUserBatchLines := A_BatchLines
@@ -379,20 +379,20 @@ class Script:
         # NOTE: PROCESS EXPLORER WILL MISLEAD BY SHOWING ONE OR THE OTHER JOB BUT NOT BOTH @CodeOptimist 2022-10
         # https://learn.microsoft.com/en-gb/windows/win32/api/winbase/nf-winbase-createjobobjecta
         # job containing all AutoHotkey processes to terminate with Python
-        Script._python_job = win32job.CreateJobObject(None, f"ahkUnwrapped:python.exe:{Script._python_pid}")  # will find existing or create
-        extended_info = win32job.QueryInformationJobObject(Script._python_job, win32job.JobObjectExtendedLimitInformation)
-        # silent breakaway so child processes won't inherit job
+        Script._python_job_obj = win32job.CreateJobObject(None, f"ahkUnwrapped:python.exe:{Script._python_pid}")  # will find existing or create
+        extended_info = win32job.QueryInformationJobObject(Script._python_job_obj, win32job.JobObjectExtendedLimitInformation)
+        # silent breakaway so child processes won't inherit job object
         extended_info['BasicLimitInformation']['LimitFlags'] = win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | win32job.JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK
-        win32job.SetInformationJobObject(Script._python_job, win32job.JobObjectExtendedLimitInformation, extended_info)
+        win32job.SetInformationJobObject(Script._python_job_obj, win32job.JobObjectExtendedLimitInformation, extended_info)
 
         # Both job objects terminate when their last handle closes (Python exits), but here KILL_ON_JOB_CLOSE (for descendants) is optional.
         # Separately, we can force terminate at any time. :TerminateJob
-        self._tree_job = win32job.CreateJobObject(None, f"ahkUnwrapped:AutoHotkey.exe:{self._popen.pid}")  # new job for descendants (and ourself)
-        extended_info = win32job.QueryInformationJobObject(self._tree_job, win32job.JobObjectExtendedLimitInformation)
+        self._tree_job_obj = win32job.CreateJobObject(None, f"ahkUnwrapped:AutoHotkey.exe:{self._popen.pid}")  # new job for descendants (and ourself)
+        extended_info = win32job.QueryInformationJobObject(self._tree_job_obj, win32job.JobObjectExtendedLimitInformation)
         # no breakaway; this job object will be inherited
         if self._kill_process_tree_on_exit:
             extended_info['BasicLimitInformation']['LimitFlags'] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-        win32job.SetInformationJobObject(self._tree_job, win32job.JobObjectExtendedLimitInformation, extended_info)
+        win32job.SetInformationJobObject(self._tree_job_obj, win32job.JobObjectExtendedLimitInformation, extended_info)
 
         @contextmanager
         def get_handle(handle: object) -> ContextManager[object]:
@@ -403,8 +403,8 @@ class Script:
 
         # both flags required
         with get_handle(win32api.OpenProcess(win32con.PROCESS_TERMINATE | win32con.PROCESS_SET_QUOTA, False, self._popen.pid)) as ahk_handle:
-            win32job.AssignProcessToJobObject(Script._python_job, ahk_handle)  # this one needs to be first to avoid 'Access denied', also see :AvoidJobRace
-            win32job.AssignProcessToJobObject(self._tree_job, ahk_handle)  # no race here, AutoHotkey won't `Run` a child process before "Initialized"
+            win32job.AssignProcessToJobObject(Script._python_job_obj, ahk_handle)  # this one needs to be first to avoid 'Access denied', also see :AvoidJobRace
+            win32job.AssignProcessToJobObject(self._tree_job_obj, ahk_handle)  # no race here, AutoHotkey won't `Run` a child process before "Initialized"
 
         # variable length utf-8 is fine here :StdInEncoding
         self._popen.stdin.write(Script._CORE.encode('utf-8'))
@@ -648,4 +648,4 @@ class Script:
             raise AhkExitException(exit_code) from ex
         finally:
             if kill_descendants:
-                win32job.TerminateJobObject(self._tree_job, exit_code)  # :TerminateJob
+                win32job.TerminateJobObject(self._tree_job_obj, exit_code)  # :TerminateJob
