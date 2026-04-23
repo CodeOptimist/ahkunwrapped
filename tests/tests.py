@@ -249,6 +249,28 @@ def test_props():
     assert ahk.get('myObj.myProp.str3') == "!"
 
 
+def test_array():
+    ahk.call('myArray.Push', 'B')
+    ahk.call('myArray.Push', 'C')
+    assert ahk.f('myArray.Get', 1) == 'A'
+    assert ahk.f('myArray.Get', 2) == 'B'
+    assert ahk.f('myArray.Get', 3) == 'C'
+
+
+@given(st.sampled_from([ahk.call, ahk.call_main]))
+def test_object_method_call(f):
+    f('MyClass.MyMethod', 'A')
+    f('MyClass.MyNestedClass.MyNestedMethod', 'B')
+    f('myObj.myProp.myMethod', 'C')
+
+
+@given(st.sampled_from([ahk.f, ahk.f_main]))
+def test_object_method_f(f):
+    assert f('MyClass.MyMethod', 'A') == 'StaticA'
+    assert f('MyClass.MyNestedClass.MyNestedMethod', 'B') == 'NestedB'
+    assert f('myObj.myProp.myMethod', 'C') == 'InstanceC'
+
+
 def test_halt_descendants():
     charmap = """
         Startup() {

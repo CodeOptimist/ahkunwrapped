@@ -211,15 +211,27 @@ class Script:
         ''' + _comment_debug() + '''if (not onMain)
         ''' + _comment_debug() + '''    _Py_DebugMsg(wParam, msg)
 
-        static data, funcName
+        static data, needResult, numSegments
         data := _pyThreadMsgData[wParam]
-        funcName := data.RemoveAt(1)
+        needResult := data.Pop()
+        numSegments := data.Pop()
+
         static ex
         try {
-        	static func, needResult, result
-            func := %funcName%
-            needResult := data.RemoveAt(1)
-            result := func(data*)
+            static target, result
+            target := %data[-numSegments]%
+            if numSegments == 1 {
+                data.Pop()
+                result := target(data*)
+            } else {
+                loop numSegments - 2
+                    target := target.%data[-numSegments + A_Index]%
+                static method
+                method := data[-1]
+                data.RemoveAt(-numSegments, numSegments)
+                result := target.%method%(data*)
+            }
+
             _Py_StdOut(needResult ? SubStr(Type(result), 1, 1) . String(result) : "", onMain)  ; :CatchToString
         } catch Any as ex {
             _Py_UserException(ex, onMain)
@@ -324,11 +336,11 @@ class Script:
     _Py_StdOut(String(A_ScriptHwnd), True)
 
     _Py_Startup() {
-        static func
-        try func := %"Startup"%
-        if IsSet(func) and HasMethod(func) {
+        static target
+        try target := %"Startup"%
+        if IsSet(target) and (target is Func) {
             static ex
-            try func()
+            try target()
             catch Any as ex
                 _Py_UserException(ex, True)
         }
@@ -658,7 +670,8 @@ A_WorkingDir := "{self._file_path.parent}"
         return f"{type(val).__name__[:1]}{val}"  # :TypePrefix
 
     def _f(self, msg: int, name: str, *args: Primitive, need_result: bool) -> Primitive:
-        self._send(msg, [name, need_result] + list(args))
+        segments = name.split('.')
+        self._send(msg, [*args, *segments, len(segments), need_result])
         return self._from_ahk_str()
 
     def call(self, name: str, *args: Primitive) -> None:

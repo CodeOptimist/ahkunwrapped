@@ -4,6 +4,17 @@
 #Warn
 #SingleInstance
 
+class MyClass {
+    static MyMethod(val) {
+        return "Static" val
+    }
+    class MyNestedClass {
+        static MyNestedMethod(val) {
+            return "Nested" val
+        }
+    }
+}
+
 return
 
 Startup() {
@@ -11,11 +22,14 @@ Startup() {
 
     global myObj := {
         myProp: {
+            myMethod: (this, val) => "Instance" val,
             str1: "Hello",
             str2: " World",
             str3: "!",
         }
     }
+
+    global myArray := ['A',]
 }
 
 #Include "included.ahk"
