@@ -83,7 +83,7 @@ def test_userexception():
         assert e.message == "UserException"
         assert e.what == "example what"
         assert e.extra == "example extra"
-        assert e.file == ahk.file
+        assert e.file == ahk._file
 
 
 def test_userexception_lineno():
@@ -91,7 +91,7 @@ def test_userexception_lineno():
         ahk.call('UserException')
         assert False
     except autohotkey.AhkUserException as e:
-        line_num = 1 + next(num for (num, line) in enumerate(ahk.script.split('\n')) if line.startswith('    throw Exception("UserException"'))
+        line_num = 1 + next(num for (num, line) in enumerate(ahk._script.split('\n')) if line.startswith('    throw Exception("UserException"'))
         assert e.line == line_num
 
 
@@ -102,7 +102,7 @@ def test_userexception_lineno_for_contrived():
         ahk.call('ContrivedException')
         assert False
     except autohotkey.AhkUserException as e:
-        line_num = 1 + next(num for (num, line) in enumerate(ahk.script.split('\n')) if line.startswith('    throw {Message: "ContrivedException"'))
+        line_num = 1 + next(num for (num, line) in enumerate(ahk._script.split('\n')) if line.startswith('    throw {Message: "ContrivedException"'))
         assert e.line == line_num
 
 
@@ -136,8 +136,8 @@ def test_warning_lineno():
         ahk.call('_Py_StdErr', autohotkey.AhkWarning.__name__, "some generic warning")  # get directly because unused atm
         assert w[0].filename == getframeinfo(currentframe()).filename and w[0].lineno == currentframe().f_lineno - 1
         # eat the redundant output from call() finishing
-        ahk.popen.stdout.readline()
-        ahk.popen.stderr.readline()
+        ahk._popen.stdout.readline()
+        ahk._popen.stderr.readline()
 
 
 # warning covered in `test_float()`
@@ -291,7 +291,7 @@ def test_threads_3sec():  # :TestThreads
             while time.time() < end_time:
                 f = random.choice((echo, echo_main))
                 # to throw in some MSG_MORE
-                text = random.choice(("a" * int(Script.BUFFER_SIZE / 3), "b" * int(Script.BUFFER_SIZE * 3)))
+                text = random.choice(("a" * int(Script._BUFFER_SIZE / 3), "b" * int(Script._BUFFER_SIZE * 3)))
                 assert f(text) == text
                 if random.choice((False, True)):
                     ahk.set('myVar', text)

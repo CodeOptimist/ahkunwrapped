@@ -29,11 +29,11 @@ import winerror
 # noinspection PyUnresolvedReferences
 from win32api import OutputDebugString
 
-IN_PYINSTALLER = getattr(sys, 'frozen', False)
+_IN_PYINSTALLER = getattr(sys, 'frozen', False)
 # noinspection PyProtectedMember,PyUnresolvedReferences
-PACKAGE_PATH = Path(sys._MEIPASS) if IN_PYINSTALLER else Path(__file__).parent
-SINGLE_JOB_ASSIGNMENTS = sys.getwindowsversion().major < 8  # https://stackoverflow.com/q/13449531/
-assert not SINGLE_JOB_ASSIGNMENTS
+_PACKAGE_PATH = Path(sys._MEIPASS) if _IN_PYINSTALLER else Path(__file__).parent
+_SINGLE_JOB_ASSIGNMENTS = sys.getwindowsversion().major < 8  # https://stackoverflow.com/q/13449531/
+assert not _SINGLE_JOB_ASSIGNMENTS
 
 
 # @formatter:off
@@ -77,7 +77,7 @@ class AhkCaughtNonExceptionWarning(AhkWarning):
         super().__init__(message)
 
 
-def comment_debug() -> str:
+def _comment_debug() -> str:
     return "" if "pytest" in sys.modules else ";"
 
 
@@ -97,20 +97,20 @@ class Script:
 
     SEPARATOR: ClassVar[str] = '\3'  # :Separator
 
-    BUFFER_SIZE: ClassVar[int] = 4096
+    _BUFFER_SIZE: ClassVar[int] = 4096
     # we read one line at a time, but need a unique reserved character
     #  to signify the end of message, and not just a newline within it
-    EOM = SEPARATOR.encode('utf-16-le') + b'\n'  # :Eom :OneByteNewline
-    EOM_SIZE = 1 + len(EOM)  # include :IsFinal bool
-    TEXT_SIZE: ClassVar[int] = BUFFER_SIZE - EOM_SIZE
+    _EOM = SEPARATOR.encode('utf-16-le') + b'\n'  # :Eom :OneByteNewline
+    _EOM_SIZE = 1 + len(_EOM)  # include :IsFinal bool
+    _TEXT_SIZE: ClassVar[int] = _BUFFER_SIZE - _EOM_SIZE
 
-    python_pid: ClassVar = os.getpid()
-    python_job: ClassVar = None
+    _python_pid: ClassVar = os.getpid()
+    _python_job: ClassVar = None
 
-    CORE: ClassVar[str] = '''
+    _CORE: ClassVar[str] = '''
     _pyUserBatchLines := A_BatchLines
     SetBatchLines, -1
-    Process, Exist, ''' + str(python_pid) + '''
+    Process, Exist, ''' + str(_python_pid) + '''
     if (ErrorLevel = 0) ; not found
         ExitApp ; https://stackoverflow.com/q/73506891/#comment129808240_73506891 :AvoidJobRace
     #NoEnv
@@ -127,10 +127,10 @@ class Script:
     _Py_Response(ByRef pipe, ByRef text, ByRef offset, ByRef onMain) {
         global _PY_SEPARATOR, _PY_EOM_BYTES
         textSize := Max(StrLen(text) * 2 + StrLen(Chr(0)) * 2 - offset, 0)
-        isFinal := onMain or textSize <= ''' + str(TEXT_SIZE) + '''
+        isFinal := onMain or textSize <= ''' + str(_TEXT_SIZE) + '''
         ;MsgBox % "offset: " offset " textSize: " textSize " isFinal: " isFinal
 
-        pipe.RawWrite(&text + offset, isFinal ? textSize : ''' + str(TEXT_SIZE) + ''')
+        pipe.RawWrite(&text + offset, isFinal ? textSize : ''' + str(_TEXT_SIZE) + ''')
         pipe.RawWrite(&_PY_EOM_BYTES + (isFinal ? +0 : +1), 1)  ; :Utf16Internals :IsFinal
         pipe.Write(_PY_SEPARATOR)  ; :Eom
         pipe.RawWrite(&_PY_EOM_BYTES +2, 1)  ; :OneByteNewline
@@ -141,9 +141,9 @@ class Script:
     _Py_MsgMore(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset
         SetBatchLines, -1
-        ''' + comment_debug() + '''DebugMsg(wParam, msg)
+        ''' + _comment_debug() + '''DebugMsg(wParam, msg)
 
-        numRead := ''' + str(TEXT_SIZE) + '''
+        numRead := ''' + str(_TEXT_SIZE) + '''
         _Py_Response(_pyStdOut, _pyOutText, _pyOutOffset += numRead, False)
         _Py_Response(_pyStdErr, _pyErrText, _pyErrOffset += numRead, False)
         return 1  ; :MsgReturn
@@ -165,7 +165,7 @@ class Script:
     _Py_MsgCopyData(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         global _pyThreadMsgData, _PY_SEPARATOR
         SetBatchLines, -1
-        ''' + comment_debug() + '''DebugMsg(wParam, msg)
+        ''' + _comment_debug() + '''DebugMsg(wParam, msg)
 
         ;dataTypeId := NumGet(lParam + 0*A_PtrSize) ; unneeded atm
         dataSize := NumGet(lParam + 1*A_PtrSize)
@@ -196,13 +196,13 @@ class Script:
     _Py_MsgFMain(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         global _pyMsgFMainData
         SetBatchLines, -1
-        ''' + comment_debug() + '''DebugMsg(wParam, msg)
+        ''' + _comment_debug() + '''DebugMsg(wParam, msg)
 
         _pyMsgFMainData.Push(hwnd)
         _pyMsgFMainData.Push(msg)
         _pyMsgFMainData.Push(lParam)
         _pyMsgFMainData.Push(wParam)
-        ''' + comment_debug() + '''OutputDebug, SENDING TO MAIN THREAD
+        ''' + _comment_debug() + '''OutputDebug, SENDING TO MAIN THREAD
         ; continue on main thread at below label
         ;  ordinarily a new message can interrupt this, but none will be sent because of our lock
         SetTimer, _Py_MsgFMain, -0 ; negative for one-time, and 0 is indeed quicker than 1
@@ -212,8 +212,8 @@ class Script:
     _Py_MsgF(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd, ByRef onMain := False) {
         global _pyThreadMsgData, _pyUserBatchLines, _PY_SEPARATOR
         SetBatchLines, -1
-        ''' + comment_debug() + '''if (not onMain)
-        ''' + comment_debug() + '''    DebugMsg(wParam, msg)
+        ''' + _comment_debug() + '''if (not onMain)
+        ''' + _comment_debug() + '''    DebugMsg(wParam, msg)
 
         func := _pyThreadMsgData[wParam].RemoveAt(1)
         if (not IsFunc(func)) {
@@ -255,7 +255,7 @@ class Script:
     _Py_MsgGet(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         local name, val
         SetBatchLines, -1
-        ''' + comment_debug() + '''DebugMsg(wParam, msg)
+        ''' + _comment_debug() + '''DebugMsg(wParam, msg)
         name := _pyThreadMsgData[wParam].RemoveAt(1)
         val := %name%
         _pyThreadMsgData.Delete(wParam)
@@ -266,7 +266,7 @@ class Script:
     _Py_MsgSet(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         local name
         SetBatchLines, -1
-        ''' + comment_debug() + '''DebugMsg(wParam, msg)
+        ''' + _comment_debug() + '''DebugMsg(wParam, msg)
         name := _pyThreadMsgData[wParam].RemoveAt(1)
         %name% := _pyThreadMsgData[wParam].RemoveAt(1)
         _pyThreadMsgData.Delete(wParam)
@@ -280,7 +280,7 @@ class Script:
 
     DebugMsg(wParam, msg) {
         OutputDebug, % Format("msg {:#06x}\t\tthread {:#05} -> {:#05}\t\tprocess {:#05} -> {:#05}"
-            , msg, wParam, DllCall("GetCurrentThreadId"), ''' + str(python_pid) + ''', DllCall("GetCurrentProcessId"))
+            , msg, wParam, DllCall("GetCurrentThreadId"), ''' + str(_python_pid) + ''', DllCall("GetCurrentProcessId"))
     }
 
     _pyThreadMsgData := {}
@@ -308,7 +308,7 @@ class Script:
     ; from _Py_MsgFMain()
     _Py_MsgFMain:
         SetBatchLines, -1
-        ''' + comment_debug() + '''OutputDebug, RECEIVED IN MAIN THREAD
+        ''' + _comment_debug() + '''OutputDebug, RECEIVED IN MAIN THREAD
         _Py_MsgF(_pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), True)
     return
 
@@ -329,13 +329,13 @@ class Script:
             *Caution*: Universal Windows Platform (UWP) apps (e.g. Windows 10+'s notepad.exe and calc.exe) discard our job object;
             suggest using AutoHotkey's `OnExit()` in those cases: https://github.com/CodeOptimist/ahkunwrapped/issues/1
         """
-        self.file = None
-        self.script = script
-        self.kill_process_tree_on_exit = kill_process_tree_on_exit
+        self._file = None
+        self._script = script
+        self._kill_process_tree_on_exit = kill_process_tree_on_exit
 
         if ahk_path is None:
-            ahk_path = PACKAGE_PATH / r'lib\AutoHotkey\AutoHotkey.exe'
-            if IN_PYINSTALLER and not ahk_path.is_file():
+            ahk_path = _PACKAGE_PATH / r'lib\AutoHotkey\AutoHotkey.exe'
+            if _IN_PYINSTALLER and not ahk_path.is_file():
                 raise FileNotFoundError(f"""Couldn't find AutoHotkey at '{ahk_path}'.
 \tEdit your `.spec` file (may have been auto-generated) to contain:
 \t    from pathlib import Path                                      # add these to the top
@@ -370,29 +370,29 @@ class Script:
             ahk_path = ahk_into_folder
 
         # user script exceptions are already caught and sent to stderr, so /ErrorStdOut would only affect debugging CORE
-        # self.cmd = [str(ahk_path), "/ErrorStdOut=utf-16-raw", "/CP65001", "*"]
-        self.cmd = [str(ahk_path), "/CP65001", "*"]  # utf-8 :StdInEncoding
+        # cmd = [str(ahk_path), "/ErrorStdOut=utf-16-raw", "/CP65001", "*"]
+        cmd = [str(ahk_path), "/CP65001", "*"]  # utf-8 :StdInEncoding
 
-        self.popen = subprocess.Popen(self.cmd, bufsize=Script.BUFFER_SIZE, executable=str(ahk_path),
-                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self._popen = subprocess.Popen(cmd, bufsize=Script._BUFFER_SIZE, executable=str(ahk_path),
+                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         # NOTE: PROCESS EXPLORER WILL MISLEAD BY SHOWING ONE OR THE OTHER JOB BUT NOT BOTH @CodeOptimist 2022-10
         # https://learn.microsoft.com/en-gb/windows/win32/api/winbase/nf-winbase-createjobobjecta
         # job containing all AutoHotkey processes to terminate with Python
-        Script.python_job = win32job.CreateJobObject(None, f"ahkUnwrapped:python.exe:{Script.python_pid}")  # will find existing or create
-        extended_info = win32job.QueryInformationJobObject(Script.python_job, win32job.JobObjectExtendedLimitInformation)
+        Script._python_job = win32job.CreateJobObject(None, f"ahkUnwrapped:python.exe:{Script._python_pid}")  # will find existing or create
+        extended_info = win32job.QueryInformationJobObject(Script._python_job, win32job.JobObjectExtendedLimitInformation)
         # silent breakaway so child processes won't inherit job
         extended_info['BasicLimitInformation']['LimitFlags'] = win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | win32job.JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK
-        win32job.SetInformationJobObject(Script.python_job, win32job.JobObjectExtendedLimitInformation, extended_info)
+        win32job.SetInformationJobObject(Script._python_job, win32job.JobObjectExtendedLimitInformation, extended_info)
 
         # Both job objects terminate when their last handle closes (Python exits), but here KILL_ON_JOB_CLOSE (for descendants) is optional.
         # Separately, we can force terminate at any time. :TerminateJob
-        self.tree_job = win32job.CreateJobObject(None, f"ahkUnwrapped:AutoHotkey.exe:{self.popen.pid}")  # new job for descendants (and ourself)
-        extended_info = win32job.QueryInformationJobObject(self.tree_job, win32job.JobObjectExtendedLimitInformation)
+        self._tree_job = win32job.CreateJobObject(None, f"ahkUnwrapped:AutoHotkey.exe:{self._popen.pid}")  # new job for descendants (and ourself)
+        extended_info = win32job.QueryInformationJobObject(self._tree_job, win32job.JobObjectExtendedLimitInformation)
         # no breakaway; this job object will be inherited
-        if self.kill_process_tree_on_exit:
+        if self._kill_process_tree_on_exit:
             extended_info['BasicLimitInformation']['LimitFlags'] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-        win32job.SetInformationJobObject(self.tree_job, win32job.JobObjectExtendedLimitInformation, extended_info)
+        win32job.SetInformationJobObject(self._tree_job, win32job.JobObjectExtendedLimitInformation, extended_info)
 
         @contextmanager
         def get_handle(handle: object) -> ContextManager[object]:
@@ -402,19 +402,19 @@ class Script:
                 win32api.CloseHandle(handle)
 
         # both flags required
-        with get_handle(win32api.OpenProcess(win32con.PROCESS_TERMINATE | win32con.PROCESS_SET_QUOTA, False, self.popen.pid)) as ahk_handle:
-            win32job.AssignProcessToJobObject(Script.python_job, ahk_handle)  # this one needs to be first to avoid 'Access denied', also see :AvoidJobRace
-            win32job.AssignProcessToJobObject(self.tree_job, ahk_handle)  # no race here, AutoHotkey won't `Run` a child process before "Initialized"
+        with get_handle(win32api.OpenProcess(win32con.PROCESS_TERMINATE | win32con.PROCESS_SET_QUOTA, False, self._popen.pid)) as ahk_handle:
+            win32job.AssignProcessToJobObject(Script._python_job, ahk_handle)  # this one needs to be first to avoid 'Access denied', also see :AvoidJobRace
+            win32job.AssignProcessToJobObject(self._tree_job, ahk_handle)  # no race here, AutoHotkey won't `Run` a child process before "Initialized"
 
         # variable length utf-8 is fine here :StdInEncoding
-        self.popen.stdin.write(Script.CORE.encode('utf-8'))
-        self.popen.stdin.write(self.script.encode('utf-8'))
-        self.popen.stdin.close()
+        self._popen.stdin.write(Script._CORE.encode('utf-8'))
+        self._popen.stdin.write(self._script.encode('utf-8'))
+        self._popen.stdin.close()
 
-        self.lock = None
-        self.hwnd = int(self._read_response(), 16)
+        self._lock = None
+        self._hwnd = int(self._read_response(), 16)
         assert self._read_response() == "Initialized"
-        self.lock = threading.Lock()
+        self._lock = threading.Lock()
 
         # last to make sure things went okay since it runs on its own thread
         atexit.register(self._on_python_exit)  # if we exit, exit AutoHotkey
@@ -438,7 +438,7 @@ class Script:
             script = script.replace(r'{{{', r'').replace(r'}}}', r'')  # {{bar}} -> {{{{bar}}}} -> {bar}
             script = script.format(**format_dict)
         script = Script(script, ahk_path, execute_from, kill_process_tree_on_exit)
-        script.file = path  # for exceptions
+        script._file = path  # for exceptions
         return script
 
     def _read_pipes(self) -> Tuple[str, str]:
@@ -446,26 +446,26 @@ class Script:
         while True:
             def end_of_message(bytearray_: bytearray) -> bool:
                 self.poll()
-                return bytearray_.endswith(Script.EOM)  # :Eom
+                return bytearray_.endswith(Script._EOM)  # :Eom
 
             # we're careful not to over-read into the next response,
             # but we can at least go line by line since we always end with \n
             err_buffer, out_buffer = bytearray(), bytearray()
             while not end_of_message(out_buffer):
-                out_buffer += self.popen.stdout.readline()  # :OneByteNewline
+                out_buffer += self._popen.stdout.readline()  # :OneByteNewline
             while not end_of_message(err_buffer):
-                err_buffer += self.popen.stderr.readline()
+                err_buffer += self._popen.stderr.readline()
 
-            err += err_buffer[:-Script.EOM_SIZE]  # : Eom
-            out += out_buffer[:-Script.EOM_SIZE]
+            err += err_buffer[:-Script._EOM_SIZE]  # : Eom
+            out += out_buffer[:-Script._EOM_SIZE]
 
-            bool_pos = -Script.EOM_SIZE
+            bool_pos = -Script._EOM_SIZE
             is_final = out_buffer[bool_pos] and err_buffer[bool_pos]  # :IsFinal
             if is_final:
                 break
             self._send_message(Script._Msg.MORE)
-        if self.lock is not None:
-            self.lock.release()
+        if self._lock is not None:
+            self._lock.release()
         return err.decode('utf-16-le'), out.decode('utf-16-le')
 
     def _read_response(self) -> str:
@@ -478,8 +478,8 @@ class Script:
                 exception = exception_class(*args.split(Script.SEPARATOR))
                 if isinstance(exception, AhkUserException):
                     if exception.from_exception_obj and Script._is_num(exception.line):
-                        exception.file = self.file or exception.file
-                        exception.line = int(exception.line) - Script.CORE.count('\n')
+                        exception.file = self._file or exception.file
+                        exception.line = int(exception.line) - Script._CORE.count('\n')
 
                         if exception.message == '2147549453':
                             exception.message = '0x8001010D - An outgoing call cannot be made since the application is dispatching an input-synchronous call.'
@@ -501,7 +501,7 @@ class Script:
     def _send_message(self, msg: int, lparam: bytes = None) -> None:
         # this is essential because messages are ignored if we're uninterruptible (e.g. in a menu)
         # wparam is normally source window handle, but in our case source thread id
-        while not win32api.SendMessage(self.hwnd, msg, threading.get_ident(), lparam):
+        while not win32api.SendMessage(self._hwnd, msg, threading.get_ident(), lparam):
             self.poll()
             time.sleep(0.01)
 
@@ -514,7 +514,7 @@ class Script:
         data_type_id = msg  # anything; unneeded atm
         struct_ = struct.pack('PLP', data_type_id, size, addr)
         self._send_message(win32con.WM_COPYDATA, struct_)
-        self.lock.acquire(blocking=True)  # set `False` to witness threads test failure :TestThreads
+        self._lock.acquire(blocking=True)  # set `False` to witness threads test failure :TestThreads
         self._send_message(msg)
 
     @staticmethod
@@ -598,13 +598,13 @@ class Script:
         # Every _send() will lock, so others are finished before we set().
         #  We don't need a confirmation response, just the ensurance that it finishes before others begin.
         self._send(Script._Msg.SET, [name, val])
-        self.lock.release()  # normally done within `_read_response()`
+        self._lock.release()  # normally done within `_read_response()`
 
     # if AutoHotkey is terminated, get error code
     def poll(self) -> None:
         """Detect when AutoHotkey process exits, typically within a loop, by raising `AhkExitException`.
         (Only needed in contexts without other Script functions, as they all run this internally.)"""
-        exit_code = self.popen.poll()
+        exit_code = self._popen.poll()
         if exit_code is not None:
             # OutputDebugString(f"Exit code: {exit_code}; call stack: {traceback.format_stack()}")
             atexit.unregister(self._on_python_exit)
@@ -623,7 +623,7 @@ class Script:
         """
 
         if kill_descendants is None:
-            kill_descendants = self.kill_process_tree_on_exit
+            kill_descendants = self._kill_process_tree_on_exit
 
         # No need to `&= ~KILL_ON_JOB_CLOSE` if `kill_descendants` is `False` and `self.kill_process_tree_on_exit` is `True`
         #  because jobs only *automatically* terminate when *Python* exits (job handle closes), not AutoHotkey by itself.
@@ -640,12 +640,12 @@ class Script:
                 exit_code = ex.args[0]  # for 'finally'
                 raise
 
-            exit_code = self.popen.wait(timeout)
+            exit_code = self._popen.wait(timeout)
             raise AhkExitException(exit_code)  # exited after a delay, before timeout
         except TimeoutExpired as ex:  # never exited before timeout
-            self.popen.terminate()
+            self._popen.terminate()
             exit_code = 1
             raise AhkExitException(exit_code) from ex
         finally:
             if kill_descendants:
-                win32job.TerminateJobObject(self.tree_job, exit_code)  # :TerminateJob
+                win32job.TerminateJobObject(self._tree_job, exit_code)  # :TerminateJob
