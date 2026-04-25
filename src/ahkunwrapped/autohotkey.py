@@ -353,14 +353,11 @@ class Script:
                 raise NotADirectoryError(f"Couldn't find folder '{execute_from_dir}' for `execute_from`.")
             ahk_into_folder = execute_from_dir / ahk_path.name
 
-            try:
-                if os.path.getmtime(ahk_into_folder) != os.path.getmtime(ahk_path):
-                    os.remove(ahk_into_folder)
-            except FileNotFoundError:
-                pass
+            if ahk_into_folder.exists() and ahk_into_folder.stat().st_mtime != ahk_path.stat().st_mtime:
+                ahk_into_folder.unlink(missing_ok=True)
 
             try:
-                os.link(ahk_path, ahk_into_folder)
+                ahk_into_folder.hardlink_to(ahk_path)
             except FileExistsError:
                 pass
             except OSError as ex:
