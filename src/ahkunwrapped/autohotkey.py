@@ -15,6 +15,7 @@ import time
 # import traceback
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
+from enum import IntEnum
 from itertools import chain
 from pathlib import Path
 from subprocess import TimeoutExpired
@@ -84,13 +85,15 @@ Primitive = Union[bool, float, int, str]
 
 
 class Script:
-    # Python 3.8 would use Final instead of ClassVar https://www.python.org/dev/peps/pep-0591/#id14
-    MSG_GET: ClassVar[int] = 0x8001
-    MSG_SET: ClassVar[int] = 0x8002
-    MSG_F: ClassVar[int] = 0x8003
-    MSG_F_MAIN: ClassVar[int] = 0x8004
-    MSG_MORE: ClassVar[int] = 0x8005
-    MSG_EXIT: ClassVar[int] = 0x8006
+    class _Msg(IntEnum):
+        # @formatter:off
+        GET    = 0x8001
+        SET    = 0x8002
+        F      = 0x8003
+        F_MAIN = 0x8004
+        MORE   = 0x8005
+        EXIT   = 0x8006
+        # @formatter:off
 
     SEPARATOR: ClassVar[str] = '\3'  # :Separator
 
@@ -286,12 +289,12 @@ class Script:
     ; these all must return non-zero to signal completion
     ; https://www.autohotkey.com/docs/v1/lib/OnMessage.htm#What_the_Callback_Should_Return  :MsgReturn
     OnMessage(''' + str(win32con.WM_COPYDATA) + ''', Func("_Py_MsgCopyData"))
-    OnMessage(''' + str(MSG_GET) + ''', Func("_Py_MsgGet"))
-    OnMessage(''' + str(MSG_SET) + ''', Func("_Py_MsgSet"))
-    OnMessage(''' + str(MSG_F) + ''', Func("_Py_MsgF"))
-    OnMessage(''' + str(MSG_F_MAIN) + ''', Func("_Py_MsgFMain"))
-    OnMessage(''' + str(MSG_MORE) + ''', Func("_Py_MsgMore"))
-    OnMessage(''' + str(MSG_EXIT) + ''', Func("_Py_MsgExit"))
+    OnMessage(''' + str(_Msg.GET) + ''', Func("_Py_MsgGet"))
+    OnMessage(''' + str(_Msg.SET) + ''', Func("_Py_MsgSet"))
+    OnMessage(''' + str(_Msg.F) + ''', Func("_Py_MsgF"))
+    OnMessage(''' + str(_Msg.F_MAIN) + ''', Func("_Py_MsgFMain"))
+    OnMessage(''' + str(_Msg.MORE) + ''', Func("_Py_MsgMore"))
+    OnMessage(''' + str(_Msg.EXIT) + ''', Func("_Py_MsgExit"))
 
     _Py_StdOut(A_ScriptHwnd)
 
@@ -460,7 +463,7 @@ class Script:
             is_final = out_buffer[bool_pos] and err_buffer[bool_pos]  # :IsFinal
             if is_final:
                 break
-            self._send_message(Script.MSG_MORE)
+            self._send_message(Script._Msg.MORE)
         if self.lock is not None:
             self.lock.release()
         return err.decode('utf-16-le'), out.decode('utf-16-le')
@@ -539,30 +542,30 @@ class Script:
 
     def call(self, name: str, *args: Primitive) -> None:
         """Call a script function without receiving the result, if any. Least latency."""
-        self._f(Script.MSG_F, name, *args, need_result=False)
+        self._f(Script._Msg.F, name, *args, need_result=False)
 
     def call_main(self, name: str, *args: Primitive) -> None:
         """Same as `call()` but executed on AutoHotkey's main thread.
         Worse latency, but solution to `AhkCantCallOutInInputSyncCallError`."""
-        self._f(Script.MSG_F_MAIN, name, *args, need_result=False)
+        self._f(Script._Msg.F_MAIN, name, *args, need_result=False)
 
     def f_raw(self, name: str, *args: Primitive) -> str:
         """Call a script function and return the result as its raw string (don't mimic AutoHotkey's type inference)."""
-        return self._f(Script.MSG_F, name, *args, need_result=True)
+        return self._f(Script._Msg.F, name, *args, need_result=True)
 
     def f_raw_main(self, name: str, *args: Primitive) -> str:
         """Same as `f_raw()` but executed on AutoHotkey's main thread.
         Worse latency, but solution to `AhkCantCallOutInInputSyncCallError`."""
-        return self._f(Script.MSG_F_MAIN, name, *args, need_result=True)
+        return self._f(Script._Msg.F_MAIN, name, *args, need_result=True)
 
     def f(self, name: str, *args: Primitive) -> Primitive:
         """Call a script function and return the result."""
-        return self._f(Script.MSG_F, name, *args, need_result=True, coerce_result=True)
+        return self._f(Script._Msg.F, name, *args, need_result=True, coerce_result=True)
 
     def f_main(self, name: str, *args: Primitive) -> Primitive:
         """Same as `f()` but executed on AutoHotkey's main thread.
         Worse latency, but solution to `AhkCantCallOutInInputSyncCallError`."""
-        return self._f(Script.MSG_F_MAIN, name, *args, need_result=True, coerce_result=True)
+        return self._f(Script._Msg.F_MAIN, name, *args, need_result=True, coerce_result=True)
 
     @staticmethod
     def _is_num(str_: str) -> bool:
@@ -582,19 +585,19 @@ class Script:
 
     def get_raw(self, name: str) -> str:
         """Get a global script variable or built-in as its raw string (don't mimic AutoHotkey's type inference)."""
-        self._send(Script.MSG_GET, [name])
+        self._send(Script._Msg.GET, [name])
         return self._read_response()
 
     def get(self, name: str) -> Primitive:
         """Get a global script variable or built-in like `A_TimeIdle`."""
-        self._send(Script.MSG_GET, [name])
+        self._send(Script._Msg.GET, [name])
         return Script._from_ahk_str(self._read_response())
 
     def set(self, name: str, val: Primitive) -> None:
         """Set a global script variable."""
         # Every _send() will lock, so others are finished before we set().
         #  We don't need a confirmation response, just the ensurance that it finishes before others begin.
-        self._send(Script.MSG_SET, [name, val])
+        self._send(Script._Msg.SET, [name, val])
         self.lock.release()  # normally done within `_read_response()`
 
     # if AutoHotkey is terminated, get error code
@@ -632,7 +635,7 @@ class Script:
             try:
                 # clean; removes tray icons etc.
                 # OutputDebugString(f"Sending ExitApp from thread {threading.get_ident()}")
-                self._send_message(Script.MSG_EXIT)
+                self._send_message(Script._Msg.EXIT)
             except AhkExitException as ex:  # exited immediately
                 exit_code = ex.args[0]  # for 'finally'
                 raise
