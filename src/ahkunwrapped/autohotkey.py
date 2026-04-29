@@ -295,17 +295,35 @@ class Script:
     _Py_SuppressUnreachableWarning:
 '''
 
+    # [[[cog
+    # SHARED_PARAMS = """
+    #         :param ahk_path: Path to an alternative AutoHotkey executable than the one included.
+    #         :param execute_from: Path AutoHotkey executable will be hard-linked/copied to, for the benefit of remembered show/hide status in the system tray.
+    #         :param halt_process_tree_on_exit: Descendants of the AutoHotkey process will inherit its win32 job object and terminate with it.
+    #             `Script.exit()` (an intentional exit) can override this.
+    #             *Caution*: Universal Windows Platform (UWP) apps (e.g., Windows 10+'s notepad.exe and calc.exe) discard our job object;
+    #             suggest using AutoHotkey's `OnExit()` in those cases.
+    # """
+    # ]]]
+    # [[[end]]]
     def __init__(self, script: str = "", ahk_path: Path = None, execute_from: Path = None, halt_process_tree_on_exit: bool = False, *,
                  _file_path: Path = None) -> None:
         """Launch an AutoHotkey process.
 
         :param script: AutoHotkey script providing user functions and globals. Optional if you only need built-in functions and `A_` variables.
-        :param ahk_path: Path to an alternative AutoHotkey executable than the one included (`ahk.get('A_AhkVersion')`).
+
+        # [[[cog
+        # cog.outl(SHARED_PARAMS)
+        # ]]]
+
+        :param ahk_path: Path to an alternative AutoHotkey executable than the one included.
         :param execute_from: Path AutoHotkey executable will be hard-linked/copied to, for the benefit of remembered show/hide status in the system tray.
         :param halt_process_tree_on_exit: Descendants of the AutoHotkey process will inherit its win32 job object and terminate with it.
             `Script.exit()` (an intentional exit) can override this.
             *Caution*: Universal Windows Platform (UWP) apps (e.g., Windows 10+'s notepad.exe and calc.exe) discard our job object;
             suggest using AutoHotkey's `OnExit()` in those cases.
+
+        # [[[end]]]
         """
 
         self._script = script
@@ -437,9 +455,19 @@ A_WorkingDir := "{self._file_path.parent}"
 
         :param path: Path to file.
         :param format_dict: `.format()` dict to use '{{variable}}' within the script. `globals()` is a common choice.
-        :param ahk_path: See `Script()`.
-        :param execute_from: See `Script()`.
-        :param halt_process_tree_on_exit: See `Script()`.
+
+        # [[[cog
+        # cog.outl(SHARED_PARAMS)
+        # ]]]
+
+        :param ahk_path: Path to an alternative AutoHotkey executable than the one included.
+        :param execute_from: Path AutoHotkey executable will be hard-linked/copied to, for the benefit of remembered show/hide status in the system tray.
+        :param halt_process_tree_on_exit: Descendants of the AutoHotkey process will inherit its win32 job object and terminate with it.
+            `Script.exit()` (an intentional exit) can override this.
+            *Caution*: Universal Windows Platform (UWP) apps (e.g., Windows 10+'s notepad.exe and calc.exe) discard our job object;
+            suggest using AutoHotkey's `OnExit()` in those cases.
+
+        # [[[end]]]
         """
         script = path.read_text(encoding='utf-8')
         if format_dict is not None:
