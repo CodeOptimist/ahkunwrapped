@@ -3,7 +3,7 @@
 import sys
 import time
 from datetime import datetime
-from enum import Enum
+from enum import IntEnum
 from pathlib import Path
 
 import schedule
@@ -14,7 +14,7 @@ choice = None
 HOTKEY_SEND_CHOICE = 'F2'
 
 
-class Event(Enum):
+class Event(IntEnum):
     QUIT, SEND_CHOICE, CLEAR_CHOICE, CHOOSE_MONTH, CHOOSE_DAY = range(5)
 
 
@@ -30,9 +30,9 @@ def main() -> None:
         while True:
             # ahk.poll()  # detect exit, but all `ahk.` functions include this
 
-            event = ahk.get('event', t=str)  # contains `ahk.poll()`
-            if event:
-                ahk.set('event', '')
+            event = ahk.get('event', t=int)  # contains `ahk.poll()`
+            if event >= 0:
+                ahk.set('event', -1)
                 on_event(event)
 
             schedule.run_pending()
@@ -45,24 +45,25 @@ def print_time() -> None:
     print(f"It is now {datetime.now().time()}")
 
 
-def on_event(event: str) -> None:
+def on_event(event: int) -> None:
     global choice
 
     def get_choice() -> str:
         return choice or datetime.now().strftime('%#I:%M %p')
 
-    if event == str(Event.QUIT):
-        ahk.exit()
-    if event == str(Event.CLEAR_CHOICE):
-        choice = None
-    if event == str(Event.SEND_CHOICE):
-        ahk.call('Send', f'{get_choice()} ')
-    if event == str(Event.CHOOSE_MONTH):
-        choice = datetime.now().strftime('%b')
-        ahk.call('Notify', f"Month is {get_choice()}, {HOTKEY_SEND_CHOICE} to insert.")
-    if event == str(Event.CHOOSE_DAY):
-        choice = datetime.now().strftime('%#d')
-        ahk.call('Notify', f"Day is {get_choice()}, {HOTKEY_SEND_CHOICE} to insert.")
+    match event:
+        case Event.QUIT:
+            ahk.exit()
+        case Event.CLEAR_CHOICE:
+            choice = None
+        case Event.SEND_CHOICE:
+            ahk.call('Send', f"{get_choice()} ")
+        case Event.CHOOSE_MONTH:
+            choice = datetime.now().strftime('%b')
+            ahk.call('Notify', f"Month is {get_choice()}, {HOTKEY_SEND_CHOICE} to insert.")
+        case Event.CHOOSE_DAY:
+            choice = datetime.now().strftime('%#d')
+            ahk.call('Notify', f"Day is {get_choice()}, {HOTKEY_SEND_CHOICE} to insert.")
 
 
 if __name__ == '__main__':

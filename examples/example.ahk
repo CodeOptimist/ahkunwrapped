@@ -7,7 +7,7 @@ Notify("Standalone script test!")
 return
 
 Startup() {
-    global event := ""
+    global event := -1
 }
 
 Notify(text, duration := 2000) {
