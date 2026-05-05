@@ -29,9 +29,8 @@ import winerror
 # noinspection PyUnresolvedReferences
 from win32api import OutputDebugString
 
-_IN_PYINSTALLER: Final = getattr(sys, 'frozen', False)
-# noinspection PyProtectedMember,PyUnresolvedReferences
-_PACKAGE_PATH: Final = Path(sys._MEIPASS) if _IN_PYINSTALLER else Path(__file__).parent
+_IN_PYINSTALLER: Final = hasattr(sys, '_MEIPASS')
+_PACKAGE_PATH: Final = Path(__file__).parent
 _SINGLE_JOB_ASSIGNMENTS: Final = sys.getwindowsversion().major < 8  # https://stackoverflow.com/q/13449531/
 assert not _SINGLE_JOB_ASSIGNMENTS
 _INT64_MIN: Final = -(1 << 63)
@@ -337,15 +336,40 @@ class Script:
             ahk_path = _PACKAGE_PATH / r'lib\AutoHotkey\AutoHotkey64.exe'
             if _IN_PYINSTALLER and not ahk_path.is_file():
                 raise FileNotFoundError(f"""Couldn't find AutoHotkey at '{ahk_path}'.
-\tEdit your `.spec` file (may have been auto-generated) to contain:
-\t    from pathlib import Path                                      # add these to the top
-\t    import ahkunwrapped                                           # add these to the top
-\t
-\t    a = Analysis(
-\t        datas=[                                                   # find this
-\t            (Path(ahkunwrapped.__file__).parent / 'lib', 'lib'),  # add this
-\t            ('your_script.ahk', '.'),                             # add this if using `Script.from_file()`
-\t        ],
+Edit your `.spec` file (may have been auto-generated) to look like `example.spec`:
+"""
+# [[[cog
+# import textwrap
+# from pathlib import Path
+# cog.outl('"""')
+# cog.outl(textwrap.indent(Path('examples/example.spec').read_text(encoding='utf-8').strip(), '    '))
+# cog.outl('"""')
+# ]]]
+"""
+    # SPDX-License-Identifier: 0BSD
+
+    from PyInstaller.utils.hooks import collect_data_files
+
+    import ahkunwrapped
+
+    a = Analysis(
+        ['example.py'],                               # Python file
+        datas=collect_data_files('ahkunwrapped') + [
+            ('example.ahk', '.'),                     # AutoHotkey script (if using `Script.from_file()`)
+        ]
+    )
+    pyz = PYZ(a.pure)
+
+    name = 'my-example'                               # used below
+
+    # for onefile
+    #exe = EXE(pyz, a.scripts, a.binaries, a.datas, name=name, upx=True, console=False)
+    # for onedir
+    exe = EXE(pyz, a.scripts, exclude_binaries=True, name=name, upx=True, console=False)
+    dir = COLLECT(exe, a.binaries, a.datas, name=name)
+"""
+# [[[end]]]
+"""
 \tAnd run it directly: `pyinstaller example.spec` or it will be overwritten (undoing your changes).""")
 
         if not ahk_path.is_file():

@@ -1,20 +1,21 @@
 # SPDX-License-Identifier: 0BSD
 
-from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files
 
 import ahkunwrapped
 
 a = Analysis(
-    ['example.py'],
-    datas=[
-        (Path(ahkunwrapped.__file__).parent / 'lib', 'lib'),  # required
-        ('example.ahk', '.'),
+    ['example.py'],                               # Python file
+    datas=collect_data_files('ahkunwrapped') + [
+        ('example.ahk', '.'),                     # AutoHotkey script (if using `Script.from_file()`)
     ]
 )
 pyz = PYZ(a.pure)
 
+name = 'my-example'                               # used below
+
 # for onefile
-exe = EXE(pyz, a.scripts, a.binaries, a.datas, name='my-example', upx=True, console=False)
+#exe = EXE(pyz, a.scripts, a.binaries, a.datas, name=name, upx=True, console=False)
 # for onedir
-# exe = EXE(pyz, a.scripts, exclude_binaries=True, name='my-example', upx=True, console=False)
-# dir = COLLECT(exe, a.binaries, a.datas, name='my-example-folder')
+exe = EXE(pyz, a.scripts, exclude_binaries=True, name=name, upx=True, console=False)
+dir = COLLECT(exe, a.binaries, a.datas, name=name)
