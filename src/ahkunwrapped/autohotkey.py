@@ -66,6 +66,7 @@ class AhkUserException(AhkException):
 
     def __post_init__(self):
         self.from_exception_obj = self.from_exception_obj == "1"
+        self.line = int(self.line)
 
         self.args = (self.message, self.what, self.extra, self.file, self.line)
 
@@ -108,15 +109,11 @@ class Script:
     _python_job_obj: ClassVar[int]
 
     _CORE: Final[str] = '''
-    _pyUserBatchLines := A_BatchLines
-    SetBatchLines, -1
-    Process, Exist, ''' + str(_python_pid) + '''
-    if (ErrorLevel = 0) ; not found
-        ExitApp ; https://stackoverflow.com/q/73506891/#comment129808240_73506891 :AvoidJobRace
-    #NoEnv
+    if (ProcessExist(''' + str(_python_pid) + ''') = 0) ; not found
+        ExitApp() ; https://stackoverflow.com/q/73506891/#comment129808240_73506891 :AvoidJobRace
     #NoTrayIcon
-    #Persistent
-    SetWorkingDir, ''' + os.getcwd() + '''
+    Persistent()
+    A_WorkingDir := "''' + os.getcwd() + '''"
     _PY_SEPARATOR := Chr(''' + str(ord(SEPARATOR)) + ''')
     _PY_EOM_BYTES := Chr(1) "`n"  ; internally as 01 00 10 00  :Utf16Internals
     ; Let's write variables as they're stored, avoiding `StrPut()`.
@@ -124,23 +121,22 @@ class Script:
     _pyStdOut := FileOpen("*", "w", "utf-16-raw")
     _pyStdErr := FileOpen("**", "w", "utf-16-raw")
 
-    _Py_Response(ByRef pipe, ByRef text, ByRef offset, ByRef onMain) {
+    _Py_Response(pipe, text, offset, onMain) {
         global _PY_SEPARATOR, _PY_EOM_BYTES
-        textSize := Max(StrLen(text) * 2 + StrLen(Chr(0)) * 2 - offset, 0)
+        textSize := Max(StrLen(text) * 2 - offset, 0)
         isFinal := onMain or textSize <= ''' + str(_TEXT_SIZE) + '''
-        ;MsgBox % "offset: " offset " textSize: " textSize " isFinal: " isFinal
+        ;MsgBox("offset: " offset " textSize: " textSize " isFinal: " isFinal)
 
-        pipe.RawWrite(&text + offset, isFinal ? textSize : ''' + str(_TEXT_SIZE) + ''')
-        pipe.RawWrite(&_PY_EOM_BYTES + (isFinal ? +0 : +1), 1)  ; :Utf16Internals :IsFinal
+        pipe.RawWrite(StrPtr(String(text)) + offset, isFinal ? textSize : ''' + str(_TEXT_SIZE) + ''')
+        pipe.RawWrite(StrPtr(_PY_EOM_BYTES) + (isFinal ? + 0 : + 1), 1)  ; :Utf16Internals :IsFinal
         pipe.Write(_PY_SEPARATOR)  ; :Eom
-        pipe.RawWrite(&_PY_EOM_BYTES +2, 1)  ; :OneByteNewline
+        pipe.RawWrite(StrPtr(_PY_EOM_BYTES) + 2, 1)  ; :OneByteNewline
 
         pipe.Read(0)
     }
 
-    _Py_MsgMore(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
+    _Py_MsgMore(wParam, lParam, msg, hwnd) {
         global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset
-        SetBatchLines, -1
         ''' + _comment_debug() + '''DebugMsg(wParam, msg)
 
         numRead := ''' + str(_TEXT_SIZE) + '''
@@ -150,111 +146,95 @@ class Script:
     }
 
     ; we can't peek() stdout/stderr, so always write to both or we will over-read and hang waiting
-    _Py_StdOut(ByRef outText, ByRef onMain := False) {
+    _Py_StdOut(outText, onMain := False) {
         global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset
         _Py_Response(_pyStdOut, _pyOutText := outText, _pyOutOffset := 0, onMain)
         _Py_Response(_pyStdErr, _pyErrText := "", _pyErrOffset := 0, onMain)
     }
 
-    _Py_StdErr(ByRef name, ByRef errText, onMain := False) {
+    _Py_StdErr(name, errText, onMain := False) {
         global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset, _PY_SEPARATOR
         _Py_Response(_pyStdOut, _pyOutText := "", _pyOutOffset := 0, onMain)
         _Py_Response(_pyStdErr, _pyErrText := name _PY_SEPARATOR errText, _pyErrOffset := 0, onMain)
     }
 
-    _Py_MsgCopyData(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
+    _Py_MsgCopyData(wParam, lParam, msg, hwnd) {
         global _pyThreadMsgData, _PY_SEPARATOR
-        SetBatchLines, -1
         ''' + _comment_debug() + '''DebugMsg(wParam, msg)
 
-        ;dataTypeId := NumGet(lParam + 0*A_PtrSize) ; unneeded atm
-        dataSize := NumGet(lParam + 1*A_PtrSize)
-        strAddr := NumGet(lParam + 2*A_PtrSize)
+        ;dataTypeId := NumGet(lParam, 0*A_PtrSize, "Int64") ; unneeded atm
+        dataSize := NumGet(lParam, 1*A_PtrSize, "UInt")
+        strAddr := NumGet(lParam, 2*A_PtrSize, "Ptr")
         ; limitation of StrGet(): data is truncated after \\0 :NullTerminator
         data := StrGet(strAddr, dataSize, "utf-8")
-        ; OutputDebug, Received: '%data%'
+        ;OutputDebug("Received: '" data "'")
 
         ; Since messages can arrive from multiple threads (e.g. clicking 'Reload' within OBS Studio 'Scripts' window,
         ;  while a timer is also running within said script) we need to keep their input data separate.
         _pyThreadMsgData[wParam] := []
         ; limitation of Parse and StrSplit(): separator must be a single character :Separator
-        Loop, Parse, data, % _PY_SEPARATOR
+        Loop Parse data, _PY_SEPARATOR
         {
             ; see Python function _to_ahk_str()
-            type := RTrim(SubStr(A_LoopField, 1, 5))  ; :TypePrefix
+            _type := RTrim(SubStr(A_LoopField, 1, 5))  ; :TypePrefix
             val := SubStr(A_LoopField, 7)
             ; others are automatic
-            if (type = "bool")
+            if (_type = "bool")
                 val := val == "True" ? 1 : 0    ; same as True/False
             _pyThreadMsgData[wParam].Push(val)
         }
         return 1  ; :MsgReturn
     }
 
-    ; call on main thread, much worse latency but may be necessary for DllCall() to avoid:
-    ;   Error 0x8001010d An outgoing call cannot be made since the application is dispatching an input-synchronous call.
-    _Py_MsgFMain(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
+    ; Run on main thread, higher latency but may be necessary for `DllCall()` to avoid:
+    ;   '(0x8001010D) An outgoing call cannot be made since the application is dispatching an input-synchronous call.'
+    _Py_MsgFMain(wParam, lParam, msg, hwnd) {
         global _pyMsgFMainData
-        SetBatchLines, -1
         ''' + _comment_debug() + '''DebugMsg(wParam, msg)
 
-        _pyMsgFMainData.Push(hwnd)
-        _pyMsgFMainData.Push(msg)
-        _pyMsgFMainData.Push(lParam)
-        _pyMsgFMainData.Push(wParam)
-        ''' + _comment_debug() + '''OutputDebug, SENDING TO MAIN THREAD
-        ; continue on main thread at below label
-        ;  ordinarily a new message can interrupt this, but none will be sent because of our lock
-        SetTimer, _Py_MsgFMain, -0 ; negative for one-time, and 0 is indeed quicker than 1
+        ''' + _comment_debug() + '''OutputDebug("SENDING TO MAIN THREAD")
+        ; Ordinarily a new message can interrupt this, but none will be sent because of our lock.
+        RunOnMain() {
+            ''' + _comment_debug() + '''OutputDebug("RECEIVED IN MAIN THREAD")
+            _Py_MsgF(wParam, lParam, msg, hwnd, True)
+        }
+
+        SetTimer(RunOnMain, -1)
         return 1  ; :MsgReturn
     }
 
-    _Py_MsgF(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd, ByRef onMain := False) {
-        global _pyThreadMsgData, _pyUserBatchLines, _PY_SEPARATOR
-        SetBatchLines, -1
+    _Py_MsgF(wParam, lParam, msg, hwnd, onMain := False) {
+        global _pyThreadMsgData, _PY_SEPARATOR
         ''' + _comment_debug() + '''if (not onMain)
         ''' + _comment_debug() + '''    DebugMsg(wParam, msg)
 
-        func := _pyThreadMsgData[wParam].RemoveAt(1)
-        if (not IsFunc(func)) {
+        _func := _pyThreadMsgData[wParam].RemoveAt(1)
+        funcRef := unset
+        try funcRef := %_func%
+        if not (IsSet(funcRef) and HasMethod(funcRef)) {
             _pyThreadMsgData.Delete(wParam)
-            _Py_StdErr("''' + AhkFuncNotFoundError.__name__ + '''", func, onMain)
+            _Py_StdErr("''' + AhkFuncNotFoundError.__name__ + '''", _func, onMain)
             return 1  ; :MsgReturn
         }
         needResult := _pyThreadMsgData[wParam].RemoveAt(1)
 
-        SetBatchLines, % _pyUserBatchLines
-        try result := %func%(_pyThreadMsgData[wParam]*)
-        catch e {
-            SetBatchLines, -1
+        try result := %_func%(_pyThreadMsgData[wParam]*)
+        catch Any as e {
             _pyThreadMsgData.Delete(wParam)
+            err := e is Error ? e : {Message: (HasMethod(e, "ToString") ? String(e) : Type(e)), What: "", Extra: "", File: "", Line: 0}
+            _Py_StdErr("''' + AhkUserException.__name__ + '''", (e is Error) _PY_SEPARATOR err.Message _PY_SEPARATOR err.What _PY_SEPARATOR err.Extra _PY_SEPARATOR err.File _PY_SEPARATOR err.Line
+        , onMain)
 
-            ; Exception() just results in a normal object; no easy way to distinguish
-            ; https://www.autohotkey.com/docs/commands/Throw.htm
-            ; https://web.archive.org/web/20201202074148/https://www.autohotkey.com/boards/viewtopic.php?t=44081
-            isExceptionObj := IsObject(e) and (e.Count() == 4 or e.Count() == 5) and e.HasKey("Message") and e.HasKey("What") and e.HasKey("File") and e.HasKey("Line")
-            if (isExceptionObj and e.Count() == 5 and !e.HasKey("Extra"))
-                isExceptionObj := False
-
-            if (!isExceptionObj)
-                e := {Message: e}
-
-            ;MsgBox, % "Message`n" e.Message "`n`nWhat`n" e.What "`n`nExtra`n" e.Extra "`n`nFile`n" e.File "`n`nLine`n" e.Line
-            _Py_StdErr("''' + AhkUserException.__name__ + '''"
-                , isExceptionObj _PY_SEPARATOR e.Message _PY_SEPARATOR e.What _PY_SEPARATOR e.Extra _PY_SEPARATOR e.File _PY_SEPARATOR e.Line
-                , onMain)
             return 1  ; :MsgReturn
         }
 
-        SetBatchLines, -1
         _pyThreadMsgData.Delete(wParam)
         _Py_StdOut(needResult ? result : "", onMain)
         return 1  ; :MsgReturn
     }
 
-    _Py_MsgGet(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
+    _Py_MsgGet(wParam, lParam, msg, hwnd) {
         local name, val
-        SetBatchLines, -1
         ''' + _comment_debug() + '''DebugMsg(wParam, msg)
         name := _pyThreadMsgData[wParam].RemoveAt(1)
         val := %name%
@@ -263,9 +243,9 @@ class Script:
         return 1  ; :MsgReturn
     }
 
-    _Py_MsgSet(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
+    _Py_MsgSet(wParam, lParam, msg, hwnd) {
+        global
         local name
-        SetBatchLines, -1
         ''' + _comment_debug() + '''DebugMsg(wParam, msg)
         name := _pyThreadMsgData[wParam].RemoveAt(1)
         %name% := _pyThreadMsgData[wParam].RemoveAt(1)
@@ -273,68 +253,57 @@ class Script:
         return 1  ; :MsgReturn
     }
 
-    _Py_MsgExit() {
-        ExitApp
-        return 1  ; required even after ExitApp :MsgReturn
+    _Py_MsgExit(wParam, lParam, msg, hwnd) {
+        ExitApp()
+        return 1  ; required even after `ExitApp()` :MsgReturn
     }
 
     DebugMsg(wParam, msg) {
-        OutputDebug, % Format("msg {:#06x}\t\tthread {:#05} -> {:#05}\t\tprocess {:#05} -> {:#05}"
-            , msg, wParam, DllCall("GetCurrentThreadId"), ''' + str(_python_pid) + ''', DllCall("GetCurrentProcessId"))
+        OutputDebug(Format("msg {:#06x}\t\tPython thread {:#05} -> AHK thread {:#05}\t\tPython process {:#05} -> AHK {:#05}"
+            , msg, wParam, DllCall("GetCurrentThreadId"), ''' + str(_python_pid) + ''', DllCall("GetCurrentProcessId")))
     }
 
-    _pyThreadMsgData := {}
-    _pyMsgFMainData := []
+    _pyThreadMsgData := Map()
 
     ; these all must return non-zero to signal completion
-    ; https://www.autohotkey.com/docs/v1/lib/OnMessage.htm#What_the_Callback_Should_Return  :MsgReturn
-    OnMessage(''' + str(win32con.WM_COPYDATA) + ''', Func("_Py_MsgCopyData"))
-    OnMessage(''' + str(_Msg.GET) + ''', Func("_Py_MsgGet"))
-    OnMessage(''' + str(_Msg.SET) + ''', Func("_Py_MsgSet"))
-    OnMessage(''' + str(_Msg.F) + ''', Func("_Py_MsgF"))
-    OnMessage(''' + str(_Msg.F_MAIN) + ''', Func("_Py_MsgFMain"))
-    OnMessage(''' + str(_Msg.MORE) + ''', Func("_Py_MsgMore"))
-    OnMessage(''' + str(_Msg.EXIT) + ''', Func("_Py_MsgExit"))
+    ; https://www.autohotkey.com/docs/v2/lib/OnMessage.htm#What_the_Callback_Should_Return  :MsgReturn
+    OnMessage(''' + str(win32con.WM_COPYDATA) + ''', _Py_MsgCopyData)
+    OnMessage(''' + str(_Msg.GET) + '''             , _Py_MsgGet)
+    OnMessage(''' + str(_Msg.SET) + '''             , _Py_MsgSet)
+    OnMessage(''' + str(_Msg.F) + '''               , _Py_MsgF)
+    OnMessage(''' + str(_Msg.F_MAIN) + '''          , _Py_MsgFMain)
+    OnMessage(''' + str(_Msg.MORE) + '''            , _Py_MsgMore)
+    OnMessage(''' + str(_Msg.EXIT) + '''            , _Py_MsgExit)
 
     _Py_StdOut(A_ScriptHwnd)
 
-    SetBatchLines, % _pyUserBatchLines
-    Func("AutoExec").Call() ; call if exists
-    _pyUserBatchLines := A_BatchLines
+    try %"Startup"%() ; call if exists
 
     _Py_StdOut("Initialized")
-    return
-
-    ; from _Py_MsgFMain()
-    _Py_MsgFMain:
-        SetBatchLines, -1
-        ''' + _comment_debug() + '''OutputDebug, RECEIVED IN MAIN THREAD
-        _Py_MsgF(_pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), True)
     return
 
     ; an unused label so #Warn won't complain that the script's auto-execute section is unreachable
     ; it is intentionally unreachable (we use `AutoExec()` instead) so scripts can run exclusive standalone code
     _Py_SuppressUnreachableWarning:
-    AutoTrim, % A_AutoTrim          ; does nothing and never called, but makes label happy
     '''
 
     def __init__(self, script: str = "", ahk_path: Path = None, execute_from: Path = None, halt_process_tree_on_exit: bool = False) -> None:
         """Launch an AutoHotkey process.
 
-        :param script: Actual AutoHotkey script. Optional if you only need built-in functions and variables.
+        :param script: AutoHotkey script providing user functions and globals. Optional if you only need built-in functions and `A_` variables.
         :param ahk_path: Path to an alternative AutoHotkey executable than the one included (`ahk.get('A_AhkVersion')`).
-        :param execute_from: Path AutoHotkey executable will be hard-linked/copied to, for the benefit of remembered show/hide status in system tray.
-        :param halt_process_tree_on_exit: Descendants of AutoHotkey process will inherit its win32 job object and terminate with it.
+        :param execute_from: Path AutoHotkey executable will be hard-linked/copied to, for the benefit of remembered show/hide status in the system tray.
+        :param halt_process_tree_on_exit: Descendants of the AutoHotkey process will inherit its win32 job object and terminate with it.
             `Script.exit()` (an intentional exit) can override this.
-            *Caution*: Universal Windows Platform (UWP) apps (e.g. Windows 10+'s notepad.exe and calc.exe) discard our job object;
-            suggest using AutoHotkey's `OnExit()` in those cases: https://github.com/CodeOptimist/ahkunwrapped/issues/1
+            *Caution*: Universal Windows Platform (UWP) apps (e.g., Windows 10+'s notepad.exe and calc.exe) discard our job object;
+            suggest using AutoHotkey's `OnExit()` in those cases.
         """
         self._file = None
         self._script = script
         self._halt_process_tree_on_exit = halt_process_tree_on_exit
 
         if ahk_path is None:
-            ahk_path = _PACKAGE_PATH / r'lib\AutoHotkey\AutoHotkey.exe'
+            ahk_path = _PACKAGE_PATH / r'lib\AutoHotkey\AutoHotkey64.exe'
             if _IN_PYINSTALLER and not ahk_path.is_file():
                 raise FileNotFoundError(f"""Couldn't find AutoHotkey at '{ahk_path}'.
 \tEdit your `.spec` file (may have been auto-generated) to contain:
@@ -372,7 +341,7 @@ class Script:
         # An asterisk to read the script from standard input. (It will safely terminate if an exception is raised beforehand.)
         # (User script exceptions are already caught and sent to stderr, so `/ErrorStdOut` would only affect debugging CORE.)
         #  cmd = [str(ahk_path), "/ErrorStdOut=utf-16-raw", "*"]
-        cmd = [str(ahk_path), "/CP65001", "*"]  # utf-8
+        cmd = [str(ahk_path), "*"]  # Default is utf-8 https://www.autohotkey.com/docs/v2/Scripts.htm#cp
 
         self._popen = subprocess.Popen(cmd, bufsize=Script._BUFFER_SIZE, executable=str(ahk_path),
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -384,7 +353,7 @@ class Script:
         # NOTE: PROCESS EXPLORER WILL MISLEAD BY SHOWING ONE OR THE OTHER JOB BUT NOT BOTH @CodeOptimist 2022-10
         # https://learn.microsoft.com/en-gb/windows/win32/api/winbase/nf-winbase-createjobobjecta
         # job containing all AutoHotkey processes to terminate with Python
-        Script._python_job_obj = win32job.CreateJobObject(None, f"ahkUnwrapped:python.exe:{Script._python_pid}")  # will find existing or create
+        Script._python_job_obj = win32job.CreateJobObject(None, f"ahkUnwrapped:{Path(sys.executable).name}:{Script._python_pid}")  # will find existing or create
         extended_info = win32job.QueryInformationJobObject(Script._python_job_obj, win32job.JobObjectExtendedLimitInformation)
         # silent breakaway so child processes won't inherit job object
         extended_info['BasicLimitInformation']['LimitFlags'] = win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | win32job.JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK
@@ -392,7 +361,7 @@ class Script:
 
         # Both job objects terminate when their last handle closes (Python exits), but here KILL_ON_JOB_CLOSE (for descendants) is optional.
         # Separately, we can force terminate at any time. :TerminateJob
-        self._tree_job_obj = win32job.CreateJobObject(None, f"ahkUnwrapped:AutoHotkey.exe:{self._popen.pid}")  # new job for descendants (and ourself)
+        self._tree_job_obj = win32job.CreateJobObject(None, f"ahkUnwrapped:{ahk_path.name}:{self._popen.pid}")  # new job for descendants (and ourselves)
         extended_info = win32job.QueryInformationJobObject(self._tree_job_obj, win32job.JobObjectExtendedLimitInformation)
         # no breakaway; this job object will be inherited
         if self._halt_process_tree_on_exit:
@@ -416,7 +385,7 @@ class Script:
         self._ahk_stdin.close()
 
         self._lock = None
-        self._hwnd = int(self._read_response(), 16)
+        self._hwnd = int(self._read_response())
         assert self._read_response() == "Initialized"
         self._lock = threading.Lock()
 
@@ -481,14 +450,14 @@ class Script:
             if exception_class:
                 exception = exception_class(*args.split(Script.SEPARATOR))
                 if isinstance(exception, AhkUserException):
-                    if exception.from_exception_obj and Script._is_num(exception.line):
+                    if exception.from_exception_obj:
                         exception.file = self._file or exception.file
-                        exception.line = int(exception.line) - Script._CORE.count('\n')
+                        exception.line = exception.line - Script._CORE.count('\n')
 
-                        if exception.message == '2147549453':
-                            exception.message = '0x8001010D - An outgoing call cannot be made since the application is dispatching an input-synchronous call.'
-                        if exception.message.startswith('0x8001010D - '):
-                            outer_msg = 'Failed a remote procedure call from OnMessage() thread. Solve this with f_main(), call_main() or f_raw_main().'
+                        if exception.message == "2147549453":
+                            exception.message = "(0x8001010D) An outgoing call cannot be made since the application is dispatching an input-synchronous call."
+                        if exception.message.startswith("(0x8001010D)"):
+                            outer_msg = "Failed a remote procedure call from OnMessage() thread. Solve this with f_main(), call_main() or f_raw_main()."
                             raise AhkCantCallOutInInputSyncCallError(outer_msg) from exception
                     else:
                         warn(AhkCaughtNonExceptionWarning(exception), stacklevel=4)
@@ -503,7 +472,7 @@ class Script:
 
     # https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendmessage
     def _send_message(self, msg: int, lparam: bytes = None) -> None:
-        # this is essential because messages are ignored if we're uninterruptible (e.g. in a menu)
+        # this is essential because messages are ignored if we're uninterruptible (e.g., in a menu)
         # wparam is normally source window handle, but in our case source thread id
         # noinspection PyTypeChecker
         while not win32api.SendMessage(self._hwnd, msg, threading.get_ident(), lparam):
@@ -547,12 +516,12 @@ class Script:
         return self._from_ahk_str(response) if coerce_result else response
 
     def call(self, name: str, *args: Primitive) -> None:
-        """Call a script function without receiving the result, if any. Least latency."""
+        """Call a script function without receiving the result, if any. Lowest latency."""
         self._f(Script._Msg.F, name, *args, need_result=False)
 
     def call_main(self, name: str, *args: Primitive) -> None:
         """Same as `call()` but executed on AutoHotkey's main thread.
-        Worse latency, but solution to `AhkCantCallOutInInputSyncCallError`."""
+        Higher latency, but solution to `AhkCantCallOutInInputSyncCallError`."""
         self._f(Script._Msg.F_MAIN, name, *args, need_result=False)
 
     def f_raw(self, name: str, *args: Primitive) -> str:
@@ -561,7 +530,7 @@ class Script:
 
     def f_raw_main(self, name: str, *args: Primitive) -> str:
         """Same as `f_raw()` but executed on AutoHotkey's main thread.
-        Worse latency, but solution to `AhkCantCallOutInInputSyncCallError`."""
+        Higher latency, but solution to `AhkCantCallOutInInputSyncCallError`."""
         return self._f(Script._Msg.F_MAIN, name, *args, need_result=True)
 
     def f(self, name: str, *args: Primitive) -> Primitive:
@@ -570,7 +539,7 @@ class Script:
 
     def f_main(self, name: str, *args: Primitive) -> Primitive:
         """Same as `f()` but executed on AutoHotkey's main thread.
-        Worse latency, but solution to `AhkCantCallOutInInputSyncCallError`."""
+        Higher latency, but solution to `AhkCantCallOutInInputSyncCallError`."""
         return self._f(Script._Msg.F_MAIN, name, *args, need_result=True, coerce_result=True)
 
     @staticmethod
@@ -600,7 +569,7 @@ class Script:
         return Script._from_ahk_str(self._read_response())
 
     def set(self, name: str, val: Primitive) -> None:
-        """Set a global script variable."""
+        """Set a global script variable, or some built-ins like `A_Clipboard`."""
         # Every `_send()` will lock, so others are finished before we `set()`.
         #  We don't need a confirmation response, just the ensurance that it finishes before others begin.
         self._send(Script._Msg.SET, [name, val])
@@ -609,8 +578,8 @@ class Script:
 
     # if AutoHotkey is terminated, get error code
     def poll(self) -> None:
-        """Detect when AutoHotkey process exits, typically within a loop, by raising `AhkExitException`.
-        (Only needed in contexts without other Script functions, as they all run this internally.)"""
+        """Detect when the AutoHotkey process exits, typically within a loop, by raising `AhkExitException`.
+        (Only needed in contexts without other `Script` functions, as they all run this internally.)"""
         exit_code = self._popen.poll()
         if exit_code is not None:
             # OutputDebugString(f"Exit code: {exit_code}; call stack: {traceback.format_stack()}")
@@ -623,7 +592,7 @@ class Script:
 
     def exit(self, timeout: float = 5.0, halt_descendants: bool = None) -> None:
         """Ask AutoHotkey to exit cleanly (remove system tray icon, etc.).
-        To my knowledge only an `OnExit()` callback could delay this.
+        To my knowledge, only an `OnExit()` callback could delay this.
 
         :param timeout: Seconds to wait before terminating. `None` for infinity.
         :param halt_descendants: Uses `Script()`'s `halt_process_tree_on_exit` (default `False`) unless overridden here.
@@ -633,7 +602,7 @@ class Script:
             halt_descendants = self._halt_process_tree_on_exit
 
         # No need to `&= ~KILL_ON_JOB_CLOSE` if `halt_descendants` is `False` and `self.halt_process_tree_on_exit` is `True`
-        #  because jobs only *automatically* terminate when *Python* exits (job handle closes), not AutoHotkey by itself.
+        #  because jobs only *automatically* terminate when *Python* exits (the job handle closes), not AutoHotkey by itself.
 
         atexit.unregister(self._on_python_exit)
 
@@ -641,7 +610,7 @@ class Script:
         try:
             try:
                 # clean; removes tray icons etc.
-                # OutputDebugString(f"Sending ExitApp from thread {threading.get_ident()}")
+                # OutputDebugString(f"Sending `ExitApp()` from thread {threading.get_ident()}")
                 self._send_message(Script._Msg.EXIT)
             except AhkExitException as ex:  # exited immediately
                 exit_code = ex.args[0]  # for 'finally'

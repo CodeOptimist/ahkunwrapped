@@ -47,8 +47,8 @@ if __name__ == '__main__':
     print_timings()
 
 
-def test_utf16_internals():
-    assert ahk.f('HasUtf16Internals')
+def test_utf16_ieee754():
+    assert ahk.f('IsUtf16Ieee754')
 
 
 @given(st.sampled_from([ahk.f, ahk.f_main]))
@@ -91,18 +91,7 @@ def test_userexception_lineno():
         ahk.call('UserException')
         assert False
     except autohotkey.AhkUserException as e:
-        line_num = 1 + next(num for (num, line) in enumerate(ahk._script.split('\n')) if line.startswith('    throw Exception("UserException"'))
-        assert e.line == line_num
-
-
-# Documenting that we can't distinguish between Exception() with good data and a contrived object with bad. They're the same within AHK.
-@pytest.mark.xfail(strict=True)  # expected fail
-def test_userexception_lineno_for_contrived():
-    try:
-        ahk.call('ContrivedException')
-        assert False
-    except autohotkey.AhkUserException as e:
-        line_num = 1 + next(num for (num, line) in enumerate(ahk._script.split('\n')) if line.startswith('    throw {Message: "ContrivedException"'))
+        line_num = 1 + next(num for (num, line) in enumerate(ahk._script.split('\n')) if line.startswith('    throw Error("UserException"'))
         assert e.line == line_num
 
 
@@ -111,14 +100,6 @@ def test_nonexception_warning():
         with pytest.warns(autohotkey.AhkCaughtNonExceptionWarning):
             with pytest.raises(autohotkey.AhkUserException):
                 ahk.call(f'NonException{i}')
-
-
-# Documenting that we can't distinguish between Exception() with good data and a contrived object with bad. They're the same within AHK.
-@pytest.mark.xfail(strict=True)  # expected fail
-def test_nonexception_warning_for_contrived():
-    with pytest.warns(autohotkey.AhkCaughtNonExceptionWarning):
-        with pytest.raises(autohotkey.AhkUserException):
-            ahk.call(f'ContrivedException')
 
 
 # if fail, adjust its `stacklevel=`
@@ -230,7 +211,7 @@ def test_long_text(f, text):
         return
 
     rand_len = random.randint(2000, 4000)
-    # ahk.call('Copy', f"{repr(text)} * {rand_len}")
+    # ahk.set('A_Clipboard', f"{repr(text)} * {rand_len}")
     long_text = text * rand_len
     # print(len(long_text), file=sys.stderr)
     assert f(long_text) == long_text
@@ -238,9 +219,9 @@ def test_long_text(f, text):
 
 def test_halt_descendants():
     charmap = """
-        AutoExec() {
+        Startup() {
             global pid
-            Run, charmap,,, pid
+            Run("charmap", unset, unset, &pid)
         }
     """
 
@@ -266,9 +247,9 @@ def test_halt_descendants():
 @pytest.mark.xfail(strict=True)  # expected fail
 def test_halt_uwp_descendants():
     calc = """
-        AutoExec() {
+        Startup() {
             global calc_pid
-            Run, calc,,, calc_pid
+            Run("calc", unset, unset, &calc_pid)
         }
     """
 

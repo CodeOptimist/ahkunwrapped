@@ -1,17 +1,24 @@
 ; SPDX-License-Identifier: AGPL-3.0-or-later
 ; Copyright (c) 2019-2026 Christopher S. Galpin
 
-#SingleInstance, force
 #Warn
+#SingleInstance
+
 return
 
-HasUtf16Internals() {
-    str := "0.333333"
-    float := 1 / 3  ; stored identically to above
+Startup() {
+    global myVar := ""
+}
 
-    loop, % (StrLen(str) + 1) * 2 { ; include null-terminator, and 2 bytes each
-;        MsgBox % A_Index - 1 " str: " NumGet(str, A_Index - 1, "UChar") " float: " NumGet(float, A_Index - 1, "UChar")
-        if (NumGet(str, A_Index - 1, "UChar") != NumGet(float, A_Index - 1, "UChar"))
+IsUtf16Ieee754() {
+    str := "0.33333333333333331"
+    floatStr := String(1 / 3)
+
+    Loop (StrLen(str) + 1) * 2 { ; include null-terminator, and 2 bytes each
+        byteA := NumGet(StrPtr(str), A_Index - 1, "UChar")
+        byteB := NumGet(StrPtr(floatStr), A_Index - 1, "UChar")
+
+        if (byteA != byteB)
             return False
     }
     return True
@@ -22,16 +29,16 @@ GetSmile() {
 }
 
 ComWmiRpcCallout() {
-    ComObjCreate("WbemScripting.SWbemLocator").ConnectServer()
+    ComObject("WbemScripting.SWbemLocator").ConnectServer()
 }
 
 ComFsoTempName() {
-    comFso := ComObjCreate("Scripting.FileSystemObject")
+    comFso := ComObject("Scripting.FileSystemObject")
     return comFso.GetTempName()
 }
 
 UserException() {
-    throw Exception("UserException", "example what", "example extra")
+    throw Error("UserException", "example what", "example extra")
 }
 
 NonException1() {
@@ -46,18 +53,6 @@ NonException3() {
     throw {abc: 123, def: "hi"}
 }
 
-NonException4() {
-    throw {Message: "example message", What: "example what", File: "some file", Line: "not a number"}
-}
-
-ContrivedException() {
-    throw {Message: "ContrivedException", What: "example what", File: "some file", Line: 9999999999}
-}
-
 Echo(val) {
     return val
-}
-
-Copy(val) {
-    Clipboard := val
 }

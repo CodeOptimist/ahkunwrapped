@@ -1,40 +1,34 @@
 ; SPDX-License-Identifier: 0BSD
 
-#SingleInstance, force
 #Warn
-ToolTip("Standalone script test!")
+#SingleInstance
+
+Notify("Standalone script test!")
 return
 
-AutoExec() {
-    global event
-    event := ""
-    SendMode, input
+Startup() {
+    global event := ""
 }
 
-Send(text) {
-    Send, % text
-}
+Notify(text, duration := 2000) {
+    ToolTip(text)
 
-ToolTip(text, s := 2) {
-    ToolTip, % text
-    ; negative for non-repeating
-    SetTimer, RemoveToolTip, % s * -1000
+    static RemoveToolTip() {
+        ToolTip()
+        global event := {{Event.CLEAR_CHOICE}}
+    }
+    SetTimer(RemoveToolTip, -duration)  ; negative for non-repeating
 }
-
-RemoveToolTip:
-    ToolTip,
-    event = {{Event.CLEAR_CHOICE}}
-return
 
 MouseIsOver(winTitle) {
-    MouseGetPos,,, winId
+    MouseGetPos(unset, unset, &winId)
     result := WinExist(winTitle " ahk_id " winId)
     return result
 }
 
-#If WinActive("ahk_class Notepad")
-{{HOTKEY_SEND_CHOICE}}::event = {{Event.SEND_CHOICE}}
-^Q::event = {{Event.QUIT}}
-#If MouseIsOver("ahk_class Notepad")
-WheelUp::event = {{Event.CHOOSE_MONTH}}
-WheelDown::event = {{Event.CHOOSE_DAY}}
+#HotIf WinActive("ahk_class Notepad")
+{{HOTKEY_SEND_CHOICE}}::global event := {{Event.SEND_CHOICE}}
+^Q::global event := {{Event.QUIT}}
+#HotIf MouseIsOver("ahk_class Notepad")
+WheelUp::global event := {{Event.CHOOSE_MONTH}}
+WheelDown::global event := {{Event.CHOOSE_DAY}}

@@ -60,10 +60,10 @@ def on_event(event: str) -> None:
         ahk.call('Send', f'{get_choice()} ')
     if event == str(Event.CHOOSE_MONTH):
         choice = datetime.now().strftime('%b')
-        ahk.call('ToolTip', f"Month is {get_choice()}, {HOTKEY_SEND_CHOICE} to insert.")
+        ahk.call('Notify', f"Month is {get_choice()}, {HOTKEY_SEND_CHOICE} to insert.")
     if event == str(Event.CHOOSE_DAY):
         choice = datetime.now().strftime('%#d')
-        ahk.call('ToolTip', f"Day is {get_choice()}, {HOTKEY_SEND_CHOICE} to insert.")
+        ahk.call('Notify', f"Day is {get_choice()}, {HOTKEY_SEND_CHOICE} to insert.")
 
 
 if __name__ == '__main__':
