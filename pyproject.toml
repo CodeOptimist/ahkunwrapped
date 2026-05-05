@@ -39,6 +39,7 @@ dev = [
     "psutil~=7.0",
     "pyinstaller~=6.0",
     "pytest~=9.0",
+    "schedule~=1.0",
 ]
 
 [tool.hatch.build.targets.wheel]
