@@ -8,6 +8,6 @@ from .autohotkey import (
     AhkCantCallOutInInputSyncCallError as AhkCantCallOutInInputSyncCallError,
     AhkWarning as AhkWarning,
     AhkUserException as AhkUserException,
-    AhkCaughtNonExceptionWarning as AhkCaughtNonExceptionWarning,
+    AhkCaughtNonErrorWarning as AhkCaughtNonErrorWarning,
     Script as Script,
 )

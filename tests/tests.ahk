@@ -45,15 +45,15 @@ UserException() {
     throw Error("UserException", "example what", "example extra")
 }
 
-NonException1() {
+NonError1() {
     throw 12345
 }
 
-NonException2() {
+NonError2() {
     throw "hello"
 }
 
-NonException3() {
+NonError3() {
     throw {abc: 123, def: "hi"}
 }
 

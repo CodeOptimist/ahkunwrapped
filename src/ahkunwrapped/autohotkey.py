@@ -53,27 +53,28 @@ class AhkWarning(UserWarning): pass                         # noqa: E701
 
 @dataclass
 class AhkUserException(AhkException):
-    from_exception_obj: bool
+    from_error_obj: bool
     message: str
-    what: str
-    extra: str
-    file: str
-    line: int
+    what: str = None
+    extra: str = None
+    file: str = None
+    line: int = None
 
     def __post_init__(self):
-        self.from_exception_obj = self.from_exception_obj == "1"
-        self.line = int(self.line)
+        self.from_error_obj = self.from_error_obj == "1"
+        if self.line is not None:
+            self.line = int(self.line)
 
         self.args = (self.message, self.what, self.extra, self.file, self.line)
 
 
-class AhkCaughtNonExceptionWarning(AhkWarning):
+class AhkCaughtNonErrorWarning(AhkWarning):
+    """Warning issued when AutoHotkey throws a primitive value instead of an Error object."""
+
     def __init__(self, exception: AhkUserException):
-        message = f"""got "throw X"; recommend "throw Exception(X)" to preserve line info.
-\tAlternatively, catch within script https://www.autohotkey.com/docs/commands/Throw.htm#Exception .
+        message = f"""got "throw X"; recommend "throw Error(X)" to preserve line info.
+\tAlternatively, catch within script https://www.autohotkey.com/docs/v2/lib/Error.htm .
 \tException message: '{exception.message}'"""
-        if not exception.message:
-            message += "\n\tMay have been an AutoHotkey object e.g. {abc: 123} intended for use within 'catch'."
         super().__init__(message)
 
 
@@ -218,11 +219,12 @@ class Script:
         needResult := _pyThreadMsgData[wParam].RemoveAt(1)
 
         try result := %_func%(_pyThreadMsgData[wParam]*)
-        catch Any as e {
+        catch Any as ex {
             _pyThreadMsgData.Delete(wParam)
-            err := e is Error ? e : {Message: (HasMethod(e, "ToString") ? String(e) : Type(e)), What: "", Extra: "", File: "", Line: 0}
-            _Py_StdErr("''' + AhkUserException.__name__ + '''", (e is Error) _PY_SEPARATOR err.Message _PY_SEPARATOR err.What _PY_SEPARATOR err.Extra _PY_SEPARATOR err.File _PY_SEPARATOR err.Line
-        , onMain)
+            if (ex is Error)
+                _Py_StdErr("''' + AhkUserException.__name__ + '''", True _PY_SEPARATOR ex.Message _PY_SEPARATOR ex.What _PY_SEPARATOR ex.Extra _PY_SEPARATOR ex.File _PY_SEPARATOR ex.Line, onMain)
+            else
+                _Py_StdErr("''' + AhkUserException.__name__ + '''", False _PY_SEPARATOR (HasMethod(ex, "ToString") ? String(ex) : Type(ex)), onMain)
 
             return 1  ; :MsgReturn
         }
@@ -447,7 +449,7 @@ class Script:
             if exception_class:
                 exception = exception_class(*args.split(Script.SEPARATOR))
                 if isinstance(exception, AhkUserException):
-                    if exception.from_exception_obj:
+                    if exception.from_error_obj:
                         exception.file = self._file or exception.file
                         exception.line = exception.line - Script._CORE.count('\n')
 
@@ -457,7 +459,7 @@ class Script:
                             outer_msg = "Failed a remote procedure call from `OnMessage()` thread. Solve this with `f_main()`, or `call_main()`."
                             raise AhkCantCallOutInInputSyncCallError(outer_msg) from exception
                     else:
-                        warn(AhkCaughtNonExceptionWarning(exception), stacklevel=5)
+                        warn(AhkCaughtNonErrorWarning(exception), stacklevel=5)
                 raise exception
 
             warning_class = next((w for w in (*AhkWarning.__subclasses__(), AhkWarning) if w.__name__ == name), None)

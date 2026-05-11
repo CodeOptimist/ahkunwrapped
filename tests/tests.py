@@ -99,19 +99,19 @@ def test_userexception_lineno():
         assert e.line == line_num
 
 
-def test_nonexception_warning():
+def test_nonerror_warning():
     for i in range(1, 4):
-        with pytest.warns(autohotkey.AhkCaughtNonExceptionWarning):
+        with pytest.warns(autohotkey.AhkCaughtNonErrorWarning):
             with pytest.raises(autohotkey.AhkUserException):
-                ahk.call(f'NonException{i}')
+                ahk.call(f'NonError{i}')
 
 
-# if fail, adjust its `stacklevel=`
-def test_nonexception_warning_lineno():
+# if failed, adjust its `stacklevel=`
+def test_nonerror_warning_lineno():
     for i in range(1, 4):
         with warnings.catch_warnings(record=True) as w:
             with pytest.raises(autohotkey.AhkUserException):
-                ahk.call(f'NonException{i}')
+                ahk.call(f'NonError{i}')
             frame = currentframe()
             assert frame is not None and w is not None
             assert w[0].filename == getframeinfo(frame).filename and w[0].lineno == frame.f_lineno - 3  # the call is 3 lines above us
