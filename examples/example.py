@@ -6,6 +6,8 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
+import schedule
+
 from ahkunwrapped import Script, AhkExitException
 
 choice = None
@@ -21,28 +23,25 @@ ahk = Script.from_file(Path(__file__).parent / 'example.ahk', format_dict=global
 
 
 def main() -> None:
-    print("Scroll your mousewheel in Notepad.")
+    print("Scroll your mousewheel up and down in Notepad.")
+    schedule.every(10).seconds.do(print_time)
 
-    ts = 0
-    while True:
-        try:
-            # ahk.poll()  # detect exit, but all ahk functions include this
+    try:
+        while True:
+            # ahk.poll()  # detect exit, but all `ahk.` functions include this
 
-            s_elapsed = time.time() - ts
-            if s_elapsed >= 60:
-                ts = time.time()
-                print_minute()
-
-            event = ahk.get('event')  # contains ahk.poll()
+            event = ahk.get('event')  # contains `ahk.poll()`
             if event:
                 ahk.set('event', '')
                 on_event(event)
-        except AhkExitException as ex:
-            sys.exit(ex.args[0])
-        time.sleep(0.01)
+
+            schedule.run_pending()
+            time.sleep(0.1)
+    except AhkExitException as e:
+        sys.exit(e.args[0])
 
 
-def print_minute() -> None:
+def print_time() -> None:
     print(f"It is now {datetime.now().time()}")
 
 
