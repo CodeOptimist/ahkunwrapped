@@ -1,4 +1,5 @@
-# -*- mode: python -*-
+# SPDX-License-Identifier: 0BSD
+
 from pathlib import Path
 
 import ahkunwrapped

@@ -1,3 +1,5 @@
+; SPDX-License-Identifier: 0BSD
+
 #SingleInstance, force
 #Warn
 ToolTip("Standalone script test!")

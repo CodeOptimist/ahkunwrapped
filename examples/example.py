@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: 0BSD
+
 import sys
 import time
 from datetime import datetime

@@ -1,4 +1,6 @@
-; Copyright (C) 2019, 2020, 2021  Christopher S. Galpin.  Licensed under AGPL-3.0-or-later.  See /NOTICE.
+; SPDX-License-Identifier: AGPL-3.0-or-later
+; Copyright (c) 2019-2026 Christopher S. Galpin
+
 #SingleInstance, force
 #Warn
 return
