@@ -1,8 +1,5 @@
-*.egg-info/
-.hypothesis/
-.idea/
-.pytest_cache/
+/.*
+!/.gitignore
 __pycache__/
 build/
 dist/
-venv/

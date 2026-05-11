@@ -131,57 +131,57 @@ class Script:
     ; https://www.autohotkey.com/docs/v1/Concepts.htm#string-encoding
     _pyStdOut := FileOpen("*", "w", "utf-16-raw")
     _pyStdErr := FileOpen("**", "w", "utf-16-raw")
-    
+
     _Py_Response(ByRef pipe, ByRef text, ByRef offset, ByRef onMain) {
         global _PY_SEPARATOR, _PY_EOM_BYTES
         textSize := Max(StrLen(text) * 2 + StrLen(Chr(0)) * 2 - offset, 0)
         isFinal := onMain or textSize <= ''' + str(TEXT_SIZE) + '''
         ;MsgBox % "offset: " offset " textSize: " textSize " isFinal: " isFinal
-        
+
         pipe.RawWrite(&text + offset, isFinal ? textSize : ''' + str(TEXT_SIZE) + ''')
         pipe.RawWrite(&_PY_EOM_BYTES + (isFinal ? +0 : +1), 1)  ; :Utf16Internals :IsFinal
         pipe.Write(_PY_SEPARATOR)  ; :Eom
         pipe.RawWrite(&_PY_EOM_BYTES +2, 1)  ; :OneByteNewline
-        
+
         pipe.Read(0)
     }
-  
+
     _Py_MsgMore(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset
         SetBatchLines, -1
         ''' + comment_debug() + '''DebugMsg(wParam, msg)
-       
+
         numRead := ''' + str(TEXT_SIZE) + '''
         _Py_Response(_pyStdOut, _pyOutText, _pyOutOffset += numRead, False)
         _Py_Response(_pyStdErr, _pyErrText, _pyErrOffset += numRead, False)
         return 1  ; :MsgReturn
     }
-     
+
     ; we can't peek() stdout/stderr, so always write to both or we will over-read and hang waiting
     _Py_StdOut(ByRef outText, ByRef onMain := False) {
         global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset
         _Py_Response(_pyStdOut, _pyOutText := outText, _pyOutOffset := 0, onMain)
         _Py_Response(_pyStdErr, _pyErrText := "", _pyErrOffset := 0, onMain)
     }
-    
+
     _Py_StdErr(ByRef name, ByRef errText, onMain := False) {
         global _pyStdOut, _pyOutText, _pyOutOffset, _pyStdErr, _pyErrText, _pyErrOffset, _PY_SEPARATOR
         _Py_Response(_pyStdOut, _pyOutText := "", _pyOutOffset := 0, onMain)
         _Py_Response(_pyStdErr, _pyErrText := name _PY_SEPARATOR errText, _pyErrOffset := 0, onMain)
     }
-    
+
     _Py_MsgCopyData(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         global _pyThreadMsgData, _PY_SEPARATOR
         SetBatchLines, -1
         ''' + comment_debug() + '''DebugMsg(wParam, msg)
-        
+
         ;dataTypeId := NumGet(lParam + 0*A_PtrSize) ; unneeded atm
         dataSize := NumGet(lParam + 1*A_PtrSize)
         strAddr := NumGet(lParam + 2*A_PtrSize)
         ; limitation of StrGet(): data is truncated after \\0 :NullTerminator
         data := StrGet(strAddr, dataSize, "utf-8")
         ; OutputDebug, Received: '%data%'
-        
+
         ; Since messages can arrive from multiple threads (e.g. clicking 'Reload' within OBS Studio 'Scripts' window,
         ;  while a timer is also running within said script) we need to keep their input data separate.
         _pyThreadMsgData[wParam] := []
@@ -198,14 +198,14 @@ class Script:
         }
         return 1  ; :MsgReturn
     }
-    
+
     ; call on main thread, much worse latency but may be necessary for DllCall() to avoid:
     ;   Error 0x8001010d An outgoing call cannot be made since the application is dispatching an input-synchronous call.
     _Py_MsgFMain(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         global _pyMsgFMainData
         SetBatchLines, -1
         ''' + comment_debug() + '''DebugMsg(wParam, msg)
-            
+
         _pyMsgFMainData.Push(hwnd)
         _pyMsgFMainData.Push(msg)
         _pyMsgFMainData.Push(lParam)
@@ -216,13 +216,13 @@ class Script:
         SetTimer, _Py_MsgFMain, -0 ; negative for one-time, and 0 is indeed quicker than 1
         return 1  ; :MsgReturn
     }
-    
+
     _Py_MsgF(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd, ByRef onMain := False) {
         global _pyThreadMsgData, _pyUserBatchLines, _PY_SEPARATOR
         SetBatchLines, -1
         ''' + comment_debug() + '''if (not onMain)
         ''' + comment_debug() + '''    DebugMsg(wParam, msg)
-       
+
         func := _pyThreadMsgData[wParam].RemoveAt(1)
         if (not IsFunc(func)) {
             _pyThreadMsgData.Delete(wParam)
@@ -236,30 +236,30 @@ class Script:
         catch e {
             SetBatchLines, -1
             _pyThreadMsgData.Delete(wParam)
-            
+
             ; Exception() just results in a normal object; no easy way to distinguish
             ; https://www.autohotkey.com/docs/commands/Throw.htm
             ; https://web.archive.org/web/20201202074148/https://www.autohotkey.com/boards/viewtopic.php?t=44081
             isExceptionObj := IsObject(e) and (e.Count() == 4 or e.Count() == 5) and e.HasKey("Message") and e.HasKey("What") and e.HasKey("File") and e.HasKey("Line")
             if (isExceptionObj and e.Count() == 5 and !e.HasKey("Extra"))
                 isExceptionObj := False
-            
+
             if (!isExceptionObj)
                 e := {Message: e}
-            
+
             ;MsgBox, % "Message`n" e.Message "`n`nWhat`n" e.What "`n`nExtra`n" e.Extra "`n`nFile`n" e.File "`n`nLine`n" e.Line
             _Py_StdErr("''' + AhkUserException.__name__ + '''"
                 , isExceptionObj _PY_SEPARATOR e.Message _PY_SEPARATOR e.What _PY_SEPARATOR e.Extra _PY_SEPARATOR e.File _PY_SEPARATOR e.Line
                 , onMain)
             return 1  ; :MsgReturn
         }
-        
+
         SetBatchLines, -1
         _pyThreadMsgData.Delete(wParam)
         _Py_StdOut(needResult ? result : "", onMain)
         return 1  ; :MsgReturn
     }
-    
+
     _Py_MsgGet(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         local name, val
         SetBatchLines, -1
@@ -270,7 +270,7 @@ class Script:
         _Py_StdOut(val)
         return 1  ; :MsgReturn
     }
-    
+
     _Py_MsgSet(ByRef wParam, ByRef lParam, ByRef msg, ByRef hwnd) {
         local name
         SetBatchLines, -1
@@ -280,20 +280,20 @@ class Script:
         _pyThreadMsgData.Delete(wParam)
         return 1  ; :MsgReturn
     }
-    
+
     _Py_MsgExit() {
         ExitApp
         return 1  ; required even after ExitApp :MsgReturn
     }
-    
+
     DebugMsg(wParam, msg) {
         OutputDebug, % Format("msg {:#06x}\t\tthread {:#05} -> {:#05}\t\tprocess {:#05} -> {:#05}"
             , msg, wParam, DllCall("GetCurrentThreadId"), ''' + str(python_pid) + ''', DllCall("GetCurrentProcessId"))
     }
-    
+
     _pyThreadMsgData := {}
     _pyMsgFMainData := []
-    
+
     ; these all must return non-zero to signal completion
     ; https://www.autohotkey.com/docs/v1/lib/OnMessage.htm#What_the_Callback_Should_Return  :MsgReturn
     OnMessage(''' + str(win32con.WM_COPYDATA) + ''', Func("_Py_MsgCopyData"))
@@ -303,23 +303,23 @@ class Script:
     OnMessage(''' + str(MSG_F_MAIN) + ''', Func("_Py_MsgFMain"))
     OnMessage(''' + str(MSG_MORE) + ''', Func("_Py_MsgMore"))
     OnMessage(''' + str(MSG_EXIT) + ''', Func("_Py_MsgExit"))
-    
+
     _Py_StdOut(A_ScriptHwnd)
-    
+
     SetBatchLines, % _pyUserBatchLines
     Func("AutoExec").Call() ; call if exists
     _pyUserBatchLines := A_BatchLines
-    
+
     _Py_StdOut("Initialized")
     return
-    
+
     ; from _Py_MsgFMain()
     _Py_MsgFMain:
         SetBatchLines, -1
         ''' + comment_debug() + '''OutputDebug, RECEIVED IN MAIN THREAD
         _Py_MsgF(_pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), _pyMsgFMainData.Pop(), True)
     return
-    
+
     ; an unused label so #Warn won't complain that the script's auto-execute section is unreachable
     ; it is intentionally unreachable (we use `AutoExec()` instead) so scripts can run exclusive standalone code
     _Py_SuppressUnreachableWarning:
