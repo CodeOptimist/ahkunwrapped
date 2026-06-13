@@ -673,7 +673,10 @@ A_WorkingDir := "{self._file_path.parent}"
         return self._from_ahk_str(t)
 
     def call(self, name: str, *args: Primitive) -> None:
-        """Call a script function without receiving the result, if any. Lowest latency."""
+        """Call a function or method without receiving the result, if any. Lowest latency.
+        Array example: `call('myArray.Push', 123)`.
+        Map example: `call('myMap.Set', 'abc', 123)`.
+        """
         self._f(Script._Msg.F, name, *args, need_result=False)
 
     def call_main(self, name: str, *args: Primitive) -> None:
@@ -688,7 +691,10 @@ A_WorkingDir := "{self._file_path.parent}"
     def f[T: Primitive](self, name: str, *args: Primitive, t: type[T]) -> T: ...
 
     def f(self, name: str, *args: Primitive, t: type[Primitive] = None) -> Any:
-        """Call a script function and return the result."""
+        """Call a function or method and return the result.
+        Array example: `f('myArray.Get', 1)`.
+        Map example: `f('myMap.Get', 'abc')`.
+        """
         return self._f(Script._Msg.F, name, *args, need_result=True, t=t)
 
     @overload

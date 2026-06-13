@@ -30,6 +30,7 @@ Instead, we bundle and bridge *AutoHotkey64.exe [v2.0](https://www.autohotkey.co
 * Dot syntax for object properties and methods.
   * Direct access to UI object members.
   * [Arrays](https://www.autohotkey.com/docs/v2/lib/Array.htm) with `.Push`, `.Get`, etc.
+  * [Maps](https://www.autohotkey.com/docs/v2/lib/Map.htm) with `.Set`, `.Get`, etc.
 
 ## Get started
 `> uv add ahkunwrapped`
@@ -101,7 +102,7 @@ Hello(text) {
 
 ## Usage
 `call(name, ...)` `f(name, ..., t=type)`  
-Execute a standalone function or a dot-notated object method (e.g., `myObj.MyMethod`).
+Execute a standalone function or a dot-notated object method (e.g., `myObj.Method`).
 - `call` is for performance, to avoid receiving a large unneeded result.
 - `f` returns the result, optionally type-asserted with `t=` (otherwise the union `float | int | bool | str`).
   
