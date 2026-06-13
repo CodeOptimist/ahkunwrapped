@@ -207,6 +207,20 @@ class Script:
         return 1  ; :MsgReturn
     }
 
+    _Py_UserException(ex, onMain) {
+        SafeString(val) {
+            try return String(val)
+            catch
+                return ""
+        }
+
+        if (ex is Error)
+            _Py_StdErr("''' + AhkUserException.__name__ + '''", True _PY_SEPARATOR ex.Message _PY_SEPARATOR ex.What _PY_SEPARATOR ex.Extra _PY_SEPARATOR ex.File _PY_SEPARATOR ex.Line, onMain)
+        else {
+            _Py_StdErr("''' + AhkUserException.__name__ + '''", False _PY_SEPARATOR SafeString(ex) _PY_SEPARATOR Type(ex), onMain)
+        }
+    }
+
     _Py_MsgF(wParam, lParam, msg, hwnd, onMain := False) {
         ''' + _comment_debug() + '''if (not onMain)
         ''' + _comment_debug() + '''    _Py_DebugMsg(wParam, msg)
@@ -241,20 +255,6 @@ class Script:
         }
 
         return 1  ; :MsgReturn
-    }
-
-    _Py_UserException(ex, onMain) {
-        SafeString(val) {
-            try return String(val)
-            catch
-                return ""
-        }
-
-        if (ex is Error)
-            _Py_StdErr("''' + AhkUserException.__name__ + '''", True _PY_SEPARATOR ex.Message _PY_SEPARATOR ex.What _PY_SEPARATOR ex.Extra _PY_SEPARATOR ex.File _PY_SEPARATOR ex.Line, onMain)
-        else {
-            _Py_StdErr("''' + AhkUserException.__name__ + '''", False _PY_SEPARATOR SafeString(ex) _PY_SEPARATOR Type(ex), onMain)
-        }
     }
 
     _Py_MsgGet(wParam, lParam, msg, hwnd) {
