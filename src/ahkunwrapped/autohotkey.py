@@ -403,12 +403,10 @@ Edit your `.spec` file (may have been auto-generated) to look like `example.spec
 # import textwrap
 # from pathlib import Path
 # cog.outl('"""')
-# cog.outl(textwrap.indent(Path('examples/example.spec').read_text(encoding='utf-8').strip(), '    '))
+# cog.outl(textwrap.indent(Path('examples/example.spec').read_text(encoding='utf-8').split('\n', 2)[-1].strip(), '    '))
 # cog.outl('"""')
 # ]]]
 """
-    # SPDX-License-Identifier: 0BSD
-
     from PyInstaller.utils.hooks import collect_data_files
 
     import ahkunwrapped
