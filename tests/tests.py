@@ -257,6 +257,17 @@ def test_array():
     assert ahk.f('myArray.Get', 3) == 'C'
 
 
+def test_map():
+    assert ahk.f('myMap.get', 'abc') == 123
+    ahk.call('myMap.set', 'abc', 456)
+    assert ahk.f('myMap.get', 'abc') == 456
+
+
+def test_var_conflict():
+    ahk.call('result.set', 'test', 'hello')
+    assert ahk.f('result.get', 'test') == 'hello'
+
+
 @given(st.sampled_from([ahk.call, ahk.call_main]))
 def test_object_method_call(f):
     f('MyClass.MyMethod', 'A')

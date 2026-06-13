@@ -30,6 +30,8 @@ Startup() {
     }
 
     global myArray := ['A',]
+    global myMap := Map("abc", 123)
+    global result := Map()
 }
 
 #Include "included.ahk"

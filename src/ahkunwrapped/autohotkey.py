@@ -211,30 +211,30 @@ class Script:
         ''' + _comment_debug() + '''if (not onMain)
         ''' + _comment_debug() + '''    _Py_DebugMsg(wParam, msg)
 
-        static data, needResult, numSegments
-        data := _pyThreadMsgData[wParam]
-        needResult := data.Pop()
-        numSegments := data.Pop()
+        static _pyData, _pyNeedResult, _pyNumSegments
+        _pyData := _pyThreadMsgData[wParam]
+        _pyNeedResult := _pyData.Pop()
+        _pyNumSegments := _pyData.Pop()
 
-        static ex
+        static _pyEx
         try {
-            static target, result
-            target := %data[-numSegments]%
-            if numSegments == 1 {
-                data.Pop()
-                result := target(data*)
+            static _pyTarget, _pyResult
+            _pyTarget := %_pyData[-_pyNumSegments]%
+            if _pyNumSegments == 1 {
+                _pyData.Pop()
+                _pyResult := _pyTarget(_pyData*)
             } else {
-                loop numSegments - 2
-                    target := target.%data[-numSegments + A_Index]%
-                static method
-                method := data[-1]
-                data.RemoveAt(-numSegments, numSegments)
-                result := target.%method%(data*)
+                loop _pyNumSegments - 2
+                    _pyTarget := _pyTarget.%_pyData[-_pyNumSegments + A_Index]%
+                static _pyMethod
+                _pyMethod := _pyData[-1]
+                _pyData.RemoveAt(-_pyNumSegments, _pyNumSegments)
+                _pyResult := _pyTarget.%_pyMethod%(_pyData*)
             }
 
-            _Py_StdOut(needResult ? SubStr(Type(result), 1, 1) . String(result) : "", onMain)  ; :CatchToString
-        } catch Any as ex {
-            _Py_UserException(ex, onMain)
+            _Py_StdOut(_pyNeedResult ? SubStr(Type(_pyResult), 1, 1) . String(_pyResult) : "", onMain)  ; :CatchToString
+        } catch Any as _pyEx {
+            _Py_UserException(_pyEx, onMain)
             return 1  ; :MsgReturn
         } finally {
             _pyThreadMsgData.Delete(wParam)
@@ -260,19 +260,19 @@ class Script:
     _Py_MsgGet(wParam, lParam, msg, hwnd) {
         ''' + _comment_debug() + '''_Py_DebugMsg(wParam, msg)
 
-        static data, name
-        data := _pyThreadMsgData[wParam]
-        name := data[1]
+        static _pyData, _pyName
+        _pyData := _pyThreadMsgData[wParam]
+        _pyName := _pyData[1]
 
-        static ex
+        static _pyEx
         try {
-            static val
-            val := %name%
-            loop data.Length - 1
-                val := val.%data[A_Index + 1]%
-            _Py_StdOut(SubStr(Type(val), 1, 1) . String(val), False)  ; :CatchToString
-        } catch Any as ex {
-            _Py_UserException(ex, False)
+            static _pyVal
+            _pyVal := %_pyName%
+            loop _pyData.Length - 1
+                _pyVal := _pyVal.%_pyData[A_Index + 1]%
+            _Py_StdOut(SubStr(Type(_pyVal), 1, 1) . String(_pyVal), False)  ; :CatchToString
+        } catch Any as _pyEx {
+            _Py_UserException(_pyEx, False)
             return 1  ; :MsgReturn
         } finally {
             _pyThreadMsgData.Delete(wParam)
@@ -285,24 +285,24 @@ class Script:
         global
         ''' + _comment_debug() + '''_Py_DebugMsg(wParam, msg)
 
-        static data, name, val
-        data := _pyThreadMsgData[wParam]
-        name := data[1]
-        val := data.Pop()
+        static _pyData, _pyName, _pyVal
+        _pyData := _pyThreadMsgData[wParam]
+        _pyName := _pyData[1]
+        _pyVal := _pyData.Pop()
 
-        static ex
+        static _pyEx
         try {
-            if data.Length == 1 {
-                %name% := val
+            if _pyData.Length == 1 {
+                %_pyName% := _pyVal
             } else {
-                static obj
-                obj := %name%
-                loop data.Length - 2
-                    obj := obj.%data[A_Index + 1]%
-                obj.%data[-1]% := val
+                static _pyObj
+                _pyObj := %_pyName%
+                loop _pyData.Length - 2
+                    _pyObj := _pyObj.%_pyData[A_Index + 1]%
+                _pyObj.%_pyData[-1]% := _pyVal
             }
-        } catch Any as ex {
-            _Py_UserException(ex, False)
+        } catch Any as _pyEx {
+            _Py_UserException(_pyEx, False)
             return 1  ; :MsgReturn
         } finally {
             _pyThreadMsgData.Delete(wParam)
