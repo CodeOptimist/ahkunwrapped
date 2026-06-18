@@ -63,7 +63,8 @@ class AhkUserException(AhkException):
         if self.line is not None:
             self.line = int(self.line)
 
-        self.args = (self.message, self.what, self.extra, self.file, self.line)
+    def __str__(self) -> str:
+        return str((self.message, self.what, self.extra, self.file, self.line))
 
 
 class AhkCaughtNonErrorWarning(AhkWarning):
