@@ -468,7 +468,7 @@ Edit your `.spec` file (may have been auto-generated) to look like `example.spec
         # NOTE: PROCESS EXPLORER WILL MISLEAD BY SHOWING ONE OR THE OTHER JOB BUT NOT BOTH @CodeOptimist 2022-10
         # https://learn.microsoft.com/en-gb/windows/win32/api/winbase/nf-winbase-createjobobjecta
         # job containing all AutoHotkey processes to terminate with Python
-        Script._python_job_obj = win32job.CreateJobObject(None, f"ahkUnwrapped:{Path(sys.executable).name}:{Script._python_pid}")  # will find existing or create
+        Script._python_job_obj = win32job.CreateJobObject(None, f"ahkUnwrapped:{Path(sys.executable).name}[{Script._python_pid}]")  # will find existing or create
         extended_info = win32job.QueryInformationJobObject(Script._python_job_obj, win32job.JobObjectExtendedLimitInformation)
         # silent breakaway so child processes won't inherit job object
         extended_info['BasicLimitInformation']['LimitFlags'] = win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | win32job.JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK
@@ -476,7 +476,7 @@ Edit your `.spec` file (may have been auto-generated) to look like `example.spec
 
         # Both job objects terminate when their last handle closes (Python exits), but here KILL_ON_JOB_CLOSE (for descendants) is optional.
         # Separately, we can force terminate at any time. :TerminateJob
-        self._tree_job_obj = win32job.CreateJobObject(None, f"ahkUnwrapped:{ahk_path.name}:{self._popen.pid}")  # new job for descendants (and ourselves)
+        self._tree_job_obj = win32job.CreateJobObject(None, f"ahkUnwrapped:{ahk_path.name}[{self._popen.pid}]")  # new job for descendants (and ourselves)
         extended_info = win32job.QueryInformationJobObject(self._tree_job_obj, win32job.JobObjectExtendedLimitInformation)
         # no breakaway; this job object will be inherited
         if self._halt_process_tree_on_exit:
