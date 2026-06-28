@@ -371,6 +371,8 @@ class Script:
                  _file_path: Path = None) -> None:
         """Launch an AutoHotkey process.
 
+        Note: Main Window Title (needed for `#SingleInstance` and `Reload`) will begin with the Python process ID instead of '*'.
+
         :param script: AutoHotkey script providing user functions and globals. Optional if you only need built-in functions and `A_` variables.
 
         # [[[cog
@@ -497,6 +499,7 @@ Edit your `.spec` file (may have been auto-generated) to look like `example.spec
 
         if self._file_path is None:
             preamble = f"""
+WinSetTitle("{Script._python_pid}" SubStr(WinGetTitle(A_ScriptHwnd), 2), A_ScriptHwnd)
 #NoTrayIcon
 """
         else:
@@ -504,6 +507,7 @@ Edit your `.spec` file (may have been auto-generated) to look like `example.spec
 A_IconTip := "{self._file_path.name}"
 A_ScriptName := "{self._file_path.name}"
 A_WorkingDir := "{self._file_path.parent}"
+WinSetTitle("{self._file_path}" SubStr(WinGetTitle(A_ScriptHwnd), 2), A_ScriptHwnd)
 #Include "{self._file_path.parent}"
 """
 
@@ -536,6 +540,7 @@ A_WorkingDir := "{self._file_path.parent}"
         As expected:
         `A_WorkingDir` and `#Include` will be set to the file's parent folder.
         `A_ScriptName` and `A_IconTip` will be set to the file's name.
+        Main Window Title (needed for `#SingleInstance` and `Reload`) will begin with the full file path.
 
         :param path: Path to file.
         :param format_dict: `.format()` dict to use '{{variable}}' within the script. `globals()` is a common choice.
@@ -626,7 +631,7 @@ A_WorkingDir := "{self._file_path.parent}"
     # https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendmessage
     def _send_message(self, msg: int, lparam: int = None) -> None:
         # This is essential because messages are ignored if we're uninterruptible (e.g., in a menu).
-        # wparam is normally the source window handle, but in our case source thread id.
+        # wparam is normally the source window handle, but in our case source thread ID.
         #  (We can't put it in the first member of COPYDATASTRUCT because ALL messages need it.)
         # noinspection PyTypeChecker
         while not win32api.SendMessage(self._hwnd, msg, threading.get_ident(), lparam):
