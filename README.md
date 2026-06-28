@@ -1,32 +1,27 @@
-# ahkUnwrapped
-I wanted to automate Windows with the coverage and simplicity of the _complete_ [AutoHotkey API](https://www.autohotkey.com/docs/v2/), yet code in Python, so I created `ahkUnwrapped`.
+# Simple and complete
+`ahkUnwrapped` is the complete [AutoHotkey v2](https://www.autohotkey.com/docs/v2/) available from Python. It is not a collection of wrapper functions introducing another layer of abstraction you need to memorize. AutoHotkey already does that for the Windows API, providing simplicity, and I find that to be enough. Let's not go backwards and add complexity.
 
-AutoHotkey already abstracts the Windows API, so another layer to introduce complexity and slowdowns is undesirable. 
+Instead, `ahkUnwrapped` achieves its integration with low-latency interprocess communication. We inject a small communication framework into otherwise normal AutoHotkey scripts that permit us to call functions and monitor variables from Python.
 
-Instead, we bundle and bridge *AutoHotkey64.exe [v2.0](https://www.autohotkey.com/docs/v2/v2-changes.htm)*, sending your initial script [via stdin](https://www.autohotkey.com/docs/v2/lib/FileOpen.htm) with a minimal framework to listen for [window messages](https://www.autohotkey.com/docs/v2/lib/OnMessage.htm) from Python and respond [via stdout](https://docs.python.org/3.13/library/subprocess.html).
+## Batteries included
+We've the privilege of bundling *AutoHotkey64.exe* under terms of the GPL, though you can provide your own. You can immediately call built-in AutoHotkey functions entirely scriptless, or embed a simple script within Python, or supply a separate file.
 
-## Features
-* **All** of AutoHotkey!
-* Minimal framework code and AHK glue.
-* Execute arbitrary AHK code or load scripts.
-* Won't explode when used from multiple threads.
-* [Hypothesis](https://hypothesis.readthedocs.io/en/latest/) powered testing of convoluted Unicode, etc.
-* Separate startup sections to test AHK scripts standalone.
-* Supports [PyInstaller](https://www.pyinstaller.org/) for _onedir/onefile_ installations.
+### Other features
+* Minimal latency.
+* Works with multithreading/multiprocessing.
+* [Hypothesis](https://hypothesis.readthedocs.io/en/latest/) powered testing of data types.
+* Separate startup sections for independent script use and development.
+* Works from [PyInstaller](https://www.pyinstaller.org/) and embedded Python environments.
 * Complete exception handling:
   * Errors for unsupported values (`NaN` `Inf` `\0`).
   * Unhandled AHK exceptions carry over to Python.
 * Special care for:
-  * Exceptions with accurate line numbers.
   * Persistent tray icon visibility settings.
   * Descendant process handling.
   * Unexpected exit handling.
-  * Minimal latency.
-### New with 3.0
-* Transitioned from AutoHotkey v1 to v2.
-* Type support:
-    * Persistent types instead of coercion.
-  * `(..., t=type)` for type assertion.
+* Bidirectional primitive types.
+  * Types persist Python → AutoHotkey.
+  * Optionally, AutoHotkey → Python with `(..., t=type)`.
 * Dot syntax for object properties and methods.
   * Direct access to UI object members.
   * [Arrays](https://www.autohotkey.com/docs/v2/lib/Array.htm) with `.Push`, `.Get`, etc.
@@ -113,7 +108,7 @@ Shorthand for accessing [built-ins](https://www.autohotkey.com/docs/v2/Variables
 Execute on AutoHotkey's main thread instead of the [OnMessage()](https://www.autohotkey.com/docs/v2/lib/OnMessage.htm#Remarks) listener.  
 This avoids `AhkCantCallOutInInputSyncCallError` in constrained threading contexts, but has higher latency.
 
-## Event loop with hotkeys
+## Example event loop with hotkeys
 _example.py:_
 <!--[[[cog
 from pathlib import Path
