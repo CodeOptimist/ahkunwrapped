@@ -389,7 +389,7 @@ class Script:
 
         self._script = script
         self._halt_process_tree_on_exit = halt_process_tree_on_exit
-        self._file_path = _file_path
+        self._file_path = _file_path.resolve() if _file_path is not None else None
 
         self._err, self._out = bytearray(), bytearray()
         self._err_buffer, self._out_buffer = bytearray(), bytearray()
@@ -604,7 +604,7 @@ A_WorkingDir := "{self._file_path.parent}"
                     if exception.from_error_obj:
                         if exception.file == '*':
                             if self._file_path is not None:
-                                exception.file = str(self._file_path.resolve())
+                                exception.file = str(self._file_path)
                             exception.line -= self._line_offset
 
                         if exception.message == "2147549453":
